@@ -1,0 +1,2048 @@
+LibraryApp.java
+
+
+import javax.swing.*;
+
+public class LibraryApp {
+    public static void main(String[] args) {
+        // Initialize the database (creates tables + default admin)
+        DatabaseManager.getInstance().initializeDatabase();
+
+        // Set look-and-feel and launch login
+        SwingUtilities.invokeLater(() -> {
+            try {
+                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            } catch (Exception ignored) {}
+            new LoginFrame();
+        });
+    }
+}
+
+
+
+DatabaseManager.java
+
+import java.sql.*;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+
+/**
+ * Singleton Database Manager using SQLite.
+ * Handles all CRUD operations for books, users, and transactions.
+ */
+public class DatabaseManager {
+
+    private static final String DB_URL = "jdbc:sqlite:library.db";
+    private static DatabaseManager instance;
+
+    private DatabaseManager() {}
+
+    public static synchronized DatabaseManager getInstance() {
+        if (instance == null) instance = new DatabaseManager();
+        return instance;
+    }
+
+    private Connection connect() throws SQLException {
+        return DriverManager.getConnection(DB_URL);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  DATABASE INITIALIZATION
+    // ══════════════════════════════════════════════════════════════════
+    public void initializeDatabase() {
+        try (Connection conn = connect(); Statement stmt = conn.createStatement()) {
+
+            stmt.execute("CREATE TABLE IF NOT EXISTS users ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                + "username TEXT UNIQUE NOT NULL, "
+                + "password TEXT NOT NULL, "
+                + "full_name TEXT NOT NULL, "
+                + "email TEXT, "
+                + "role TEXT NOT NULL DEFAULT 'user', "
+                + "created_at TEXT DEFAULT (date('now'))"
+                + ")");
+
+            stmt.execute("CREATE TABLE IF NOT EXISTS books ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                + "title TEXT NOT NULL, "
+                + "author TEXT NOT NULL, "
+                + "isbn TEXT UNIQUE, "
+                + "category TEXT, "
+                + "total_qty INTEGER NOT NULL DEFAULT 1, "
+                + "available_qty INTEGER NOT NULL DEFAULT 1, "
+                + "added_date TEXT DEFAULT (date('now'))"
+                + ")");
+
+            stmt.execute("CREATE TABLE IF NOT EXISTS issued_books ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                + "book_id INTEGER NOT NULL, "
+                + "user_id INTEGER NOT NULL, "
+                + "issue_date TEXT NOT NULL, "
+                + "due_date TEXT NOT NULL, "
+                + "return_date TEXT, "
+                + "fine REAL DEFAULT 0, "
+                + "status TEXT DEFAULT 'ISSUED', "
+                + "FOREIGN KEY(book_id) REFERENCES books(id), "
+                + "FOREIGN KEY(user_id) REFERENCES users(id)"
+                + ")");
+
+            // Create indexes for search optimization
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_books_title ON books(title)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_books_author ON books(author)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_books_isbn ON books(isbn)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_issued_status ON issued_books(status)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_issued_user ON issued_books(user_id)");
+
+            // Insert default admin if not exists
+            PreparedStatement ps = conn.prepareStatement(
+                "INSERT OR IGNORE INTO users (username, password, full_name, email, role) VALUES (?, ?, ?, ?, ?)");
+            ps.setString(1, "admin");
+            ps.setString(2, "admin123");
+            ps.setString(3, "System Administrator");
+            ps.setString(4, "admin@library.com");
+            ps.setString(5, "admin");
+            ps.executeUpdate();
+
+            // Insert sample user
+            ps.setString(1, "student1");
+            ps.setString(2, "pass123");
+            ps.setString(3, "Rahul Sharma");
+            ps.setString(4, "rahul@college.com");
+            ps.setString(5, "user");
+            ps.executeUpdate();
+
+            // Insert sample books
+            String[] titles = {"Data Structures & Algorithms", "Operating System Concepts",
+                "Database Management Systems", "Computer Networks", "Java: The Complete Reference",
+                "Artificial Intelligence: A Modern Approach", "Design Patterns",
+                "Introduction to Machine Learning", "Discrete Mathematics", "Software Engineering"};
+            String[] authors = {"Thomas H. Cormen", "Abraham Silberschatz", "Raghu Ramakrishnan",
+                "Andrew S. Tanenbaum", "Herbert Schildt", "Stuart Russell", "Gang of Four",
+                "Ethem Alpaydin", "Kenneth H. Rosen", "Ian Sommerville"};
+            String[] isbns = {"978-0262033848", "978-1118063330", "978-0072465631",
+                "978-0132126953", "978-1260440232", "978-0136042594", "978-0201633610",
+                "978-0262028189", "978-0073383095", "978-0133943030"};
+            String[] cats = {"DSA", "OS", "DBMS", "Networking", "Programming",
+                "AI", "Programming", "ML", "Mathematics", "SE"};
+
+            PreparedStatement bookPs = conn.prepareStatement(
+                "INSERT OR IGNORE INTO books (title, author, isbn, category, total_qty, available_qty) "
+                + "VALUES (?, ?, ?, ?, ?, ?)");
+            for (int i = 0; i < titles.length; i++) {
+                bookPs.setString(1, titles[i]);
+                bookPs.setString(2, authors[i]);
+                bookPs.setString(3, isbns[i]);
+                bookPs.setString(4, cats[i]);
+                bookPs.setInt(5, 5);
+                bookPs.setInt(6, 5);
+                bookPs.executeUpdate();
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  AUTHENTICATION
+    // ══════════════════════════════════════════════════════════════════
+    public Map<String, String> authenticate(String username, String password) {
+        String sql = "SELECT * FROM users WHERE username = ? AND password = ?";
+        try (Connection conn = connect(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, username);
+            ps.setString(2, password);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                Map<String, String> user = new HashMap<>();
+                user.put("id", String.valueOf(rs.getInt("id")));
+                user.put("username", rs.getString("username"));
+                user.put("full_name", rs.getString("full_name"));
+                user.put("email", rs.getString("email"));
+                user.put("role", rs.getString("role"));
+                return user;
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return null;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  USER MANAGEMENT
+    // ══════════════════════════════════════════════════════════════════
+    public boolean addUser(String username, String password, String fullName, String email, String role) {
+        String sql = "INSERT INTO users (username, password, full_name, email, role) VALUES (?, ?, ?, ?, ?)";
+        try (Connection conn = connect(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, username);
+            ps.setString(2, password);
+            ps.setString(3, fullName);
+            ps.setString(4, email);
+            ps.setString(5, role);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) { e.printStackTrace(); }
+        return false;
+    }
+
+    public boolean updateUser(int id, String fullName, String email, String password) {
+        String sql = "UPDATE users SET full_name = ?, email = ?" +
+                     (password != null && !password.isEmpty() ? ", password = ?" : "") +
+                     " WHERE id = ?";
+        try (Connection conn = connect(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, fullName);
+            ps.setString(2, email);
+            if (password != null && !password.isEmpty()) {
+                ps.setString(3, password);
+                ps.setInt(4, id);
+            } else {
+                ps.setInt(3, id);
+            }
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) { e.printStackTrace(); }
+        return false;
+    }
+
+    public boolean deleteUser(int id) {
+        try (Connection conn = connect(); PreparedStatement ps = conn.prepareStatement(
+                "DELETE FROM users WHERE id = ? AND role != 'admin'")) {
+            ps.setInt(1, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) { e.printStackTrace(); }
+        return false;
+    }
+
+    public List<Object[]> getAllUsers() {
+        List<Object[]> users = new ArrayList<>();
+        String sql = "SELECT id, username, full_name, email, role, created_at FROM users ORDER BY id";
+        try (Connection conn = connect(); Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                users.add(new Object[]{
+                    rs.getInt("id"), rs.getString("username"), rs.getString("full_name"),
+                    rs.getString("email"), rs.getString("role"), rs.getString("created_at")
+                });
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return users;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  BOOK MANAGEMENT
+    // ══════════════════════════════════════════════════════════════════
+    public boolean addBook(String title, String author, String isbn, String category, int qty) {
+        String sql = "INSERT INTO books (title, author, isbn, category, total_qty, available_qty) VALUES (?, ?, ?, ?, ?, ?)";
+        try (Connection conn = connect(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, title);
+            ps.setString(2, author);
+            ps.setString(3, isbn);
+            ps.setString(4, category);
+            ps.setInt(5, qty);
+            ps.setInt(6, qty);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) { e.printStackTrace(); }
+        return false;
+    }
+
+    public boolean updateBook(int id, String title, String author, String isbn, String category, int totalQty) {
+        // Get current issued count
+        int issuedCount = 0;
+        try (Connection conn = connect(); PreparedStatement ps = conn.prepareStatement(
+                "SELECT COUNT(*) FROM issued_books WHERE book_id = ? AND status = 'ISSUED'")) {
+            ps.setInt(1, id);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) issuedCount = rs.getInt(1);
+        } catch (SQLException e) { e.printStackTrace(); }
+
+        int newAvailable = totalQty - issuedCount;
+        if (newAvailable < 0) return false;
+
+        String sql = "UPDATE books SET title=?, author=?, isbn=?, category=?, total_qty=?, available_qty=? WHERE id=?";
+        try (Connection conn = connect(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, title);
+            ps.setString(2, author);
+            ps.setString(3, isbn);
+            ps.setString(4, category);
+            ps.setInt(5, totalQty);
+            ps.setInt(6, newAvailable);
+            ps.setInt(7, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) { e.printStackTrace(); }
+        return false;
+    }
+
+    public boolean deleteBook(int id) {
+        try (Connection conn = connect(); PreparedStatement ps = conn.prepareStatement(
+                "DELETE FROM books WHERE id = ? AND available_qty = total_qty")) {
+            ps.setInt(1, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) { e.printStackTrace(); }
+        return false;
+    }
+
+    public List<Object[]> getAllBooks() {
+        List<Object[]> books = new ArrayList<>();
+        String sql = "SELECT * FROM books ORDER BY id";
+        try (Connection conn = connect(); Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                books.add(new Object[]{
+                    rs.getInt("id"), rs.getString("title"), rs.getString("author"),
+                    rs.getString("isbn"), rs.getString("category"),
+                    rs.getInt("total_qty"), rs.getInt("available_qty"), rs.getString("added_date")
+                });
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return books;
+    }
+
+    public List<Object[]> searchBooks(String query, String filterBy) {
+        List<Object[]> books = new ArrayList<>();
+        String sql;
+        switch (filterBy) {
+            case "Title":
+                sql = "SELECT * FROM books WHERE title LIKE ? ORDER BY title";
+                break;
+            case "Author":
+                sql = "SELECT * FROM books WHERE author LIKE ? ORDER BY author";
+                break;
+            case "ID":
+                sql = "SELECT * FROM books WHERE CAST(id AS TEXT) LIKE ? ORDER BY id";
+                break;
+            case "ISBN":
+                sql = "SELECT * FROM books WHERE isbn LIKE ? ORDER BY isbn";
+                break;
+            case "Category":
+                sql = "SELECT * FROM books WHERE category LIKE ? ORDER BY category";
+                break;
+            default:
+                sql = "SELECT * FROM books WHERE title LIKE ? OR author LIKE ? OR isbn LIKE ? OR category LIKE ? ORDER BY title";
+                break;
+        }
+        try (Connection conn = connect(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            String param = "%" + query + "%";
+            ps.setString(1, param);
+            if (filterBy.equals("All")) {
+                ps.setString(2, param);
+                ps.setString(3, param);
+                ps.setString(4, param);
+            }
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                books.add(new Object[]{
+                    rs.getInt("id"), rs.getString("title"), rs.getString("author"),
+                    rs.getString("isbn"), rs.getString("category"),
+                    rs.getInt("total_qty"), rs.getInt("available_qty"), rs.getString("added_date")
+                });
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return books;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ISSUE & RETURN OPERATIONS
+    // ══════════════════════════════════════════════════════════════════
+    public String issueBook(int bookId, int userId, int dueDays) {
+        try (Connection conn = connect()) {
+            conn.setAutoCommit(false);
+
+            // Check if book is available
+            PreparedStatement checkBook = conn.prepareStatement(
+                "SELECT available_qty, title FROM books WHERE id = ?");
+            checkBook.setInt(1, bookId);
+            ResultSet rs = checkBook.executeQuery();
+            if (!rs.next()) { conn.rollback(); return "Book not found!"; }
+            if (rs.getInt("available_qty") <= 0) { conn.rollback(); return "Book is not available!"; }
+            String bookTitle = rs.getString("title");
+
+            // Check if user exists
+            PreparedStatement checkUser = conn.prepareStatement("SELECT full_name FROM users WHERE id = ?");
+            checkUser.setInt(1, userId);
+            ResultSet userRs = checkUser.executeQuery();
+            if (!userRs.next()) { conn.rollback(); return "User not found!"; }
+
+            // Check if already issued to this user
+            PreparedStatement checkIssued = conn.prepareStatement(
+                "SELECT id FROM issued_books WHERE book_id = ? AND user_id = ? AND status = 'ISSUED'");
+            checkIssued.setInt(1, bookId);
+            checkIssued.setInt(2, userId);
+            if (checkIssued.executeQuery().next()) {
+                conn.rollback(); return "This book is already issued to this user!";
+            }
+
+            // Issue the book
+            LocalDate today = LocalDate.now();
+            LocalDate dueDate = today.plusDays(dueDays);
+
+            PreparedStatement issue = conn.prepareStatement(
+                "INSERT INTO issued_books (book_id, user_id, issue_date, due_date, status) VALUES (?, ?, ?, ?, 'ISSUED')");
+            issue.setInt(1, bookId);
+            issue.setInt(2, userId);
+            issue.setString(3, today.toString());
+            issue.setString(4, dueDate.toString());
+            issue.executeUpdate();
+
+            // Decrement available quantity
+            PreparedStatement updateQty = conn.prepareStatement(
+                "UPDATE books SET available_qty = available_qty - 1 WHERE id = ?");
+            updateQty.setInt(1, bookId);
+            updateQty.executeUpdate();
+
+            conn.commit();
+            return "SUCCESS: \"" + bookTitle + "\" issued successfully! Due date: " + dueDate;
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return "Database error: " + e.getMessage();
+        }
+    }
+
+    public String returnBook(int issueId) {
+        try (Connection conn = connect()) {
+            conn.setAutoCommit(false);
+
+            // Get issue details
+            PreparedStatement ps = conn.prepareStatement(
+                "SELECT ib.*, b.title FROM issued_books ib JOIN books b ON ib.book_id = b.id WHERE ib.id = ? AND ib.status = 'ISSUED'");
+            ps.setInt(1, issueId);
+            ResultSet rs = ps.executeQuery();
+            if (!rs.next()) { conn.rollback(); return "Issue record not found or already returned!"; }
+
+            int bookId = rs.getInt("book_id");
+            String bookTitle = rs.getString("title");
+            LocalDate dueDate = LocalDate.parse(rs.getString("due_date"));
+            LocalDate today = LocalDate.now();
+
+            // Calculate fine (₹10/day for late returns)
+            double fine = 0;
+            long daysLate = ChronoUnit.DAYS.between(dueDate, today);
+            if (daysLate > 0) {
+                fine = daysLate * 10.0;
+            }
+
+            // Update issue record
+            PreparedStatement updateIssue = conn.prepareStatement(
+                "UPDATE issued_books SET return_date = ?, fine = ?, status = 'RETURNED' WHERE id = ?");
+            updateIssue.setString(1, today.toString());
+            updateIssue.setDouble(2, fine);
+            updateIssue.setInt(3, issueId);
+            updateIssue.executeUpdate();
+
+            // Increment available quantity
+            PreparedStatement updateQty = conn.prepareStatement(
+                "UPDATE books SET available_qty = available_qty + 1 WHERE id = ?");
+            updateQty.setInt(1, bookId);
+            updateQty.executeUpdate();
+
+            conn.commit();
+
+            if (fine > 0) {
+                return "SUCCESS: \"" + bookTitle + "\" returned. Late by " + daysLate + " days. Fine: ₹" + String.format("%.0f", fine);
+            }
+            return "SUCCESS: \"" + bookTitle + "\" returned successfully. No fine.";
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return "Database error: " + e.getMessage();
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ISSUED / RETURNED BOOK QUERIES
+    // ══════════════════════════════════════════════════════════════════
+    public List<Object[]> getIssuedBooks() {
+        return getTransactionsByStatus("ISSUED");
+    }
+
+    public List<Object[]> getReturnedBooks() {
+        return getTransactionsByStatus("RETURNED");
+    }
+
+    public List<Object[]> getAllTransactions() {
+        List<Object[]> records = new ArrayList<>();
+        String sql = "SELECT ib.id, b.title, u.full_name, u.username, ib.issue_date, ib.due_date, "
+            + "ib.return_date, ib.fine, ib.status "
+            + "FROM issued_books ib "
+            + "JOIN books b ON ib.book_id = b.id "
+            + "JOIN users u ON ib.user_id = u.id "
+            + "ORDER BY ib.id DESC";
+        try (Connection conn = connect(); Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                records.add(new Object[]{
+                    rs.getInt("id"), rs.getString("title"), rs.getString("full_name"),
+                    rs.getString("username"), rs.getString("issue_date"),
+                    rs.getString("due_date"), rs.getString("return_date"),
+                    rs.getDouble("fine"), rs.getString("status")
+                });
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return records;
+    }
+
+    private List<Object[]> getTransactionsByStatus(String status) {
+        List<Object[]> records = new ArrayList<>();
+        String sql = "SELECT ib.id, b.id as book_id, b.title, u.full_name, u.username, "
+            + "ib.issue_date, ib.due_date, ib.return_date, ib.fine, ib.status "
+            + "FROM issued_books ib "
+            + "JOIN books b ON ib.book_id = b.id "
+            + "JOIN users u ON ib.user_id = u.id "
+            + "WHERE ib.status = ? ORDER BY ib.id DESC";
+        try (Connection conn = connect(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, status);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                records.add(new Object[]{
+                    rs.getInt("id"), rs.getInt("book_id"), rs.getString("title"),
+                    rs.getString("full_name"), rs.getString("username"),
+                    rs.getString("issue_date"), rs.getString("due_date"),
+                    rs.getString("return_date"), rs.getDouble("fine"), rs.getString("status")
+                });
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return records;
+    }
+
+    // For a specific user
+    public List<Object[]> getUserIssuedBooks(int userId) {
+        List<Object[]> records = new ArrayList<>();
+        String sql = "SELECT ib.id, b.title, b.author, ib.issue_date, ib.due_date, ib.status "
+            + "FROM issued_books ib JOIN books b ON ib.book_id = b.id "
+            + "WHERE ib.user_id = ? AND ib.status = 'ISSUED' ORDER BY ib.due_date";
+        try (Connection conn = connect(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                LocalDate due = LocalDate.parse(rs.getString("due_date"));
+                long daysLeft = ChronoUnit.DAYS.between(LocalDate.now(), due);
+                double pendingFine = daysLeft < 0 ? Math.abs(daysLeft) * 10.0 : 0;
+                records.add(new Object[]{
+                    rs.getInt("id"), rs.getString("title"), rs.getString("author"),
+                    rs.getString("issue_date"), rs.getString("due_date"),
+                    daysLeft, pendingFine
+                });
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return records;
+    }
+
+    public List<Object[]> getUserHistory(int userId) {
+        List<Object[]> records = new ArrayList<>();
+        String sql = "SELECT ib.id, b.title, ib.issue_date, ib.due_date, ib.return_date, ib.fine, ib.status "
+            + "FROM issued_books ib JOIN books b ON ib.book_id = b.id "
+            + "WHERE ib.user_id = ? ORDER BY ib.id DESC";
+        try (Connection conn = connect(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                records.add(new Object[]{
+                    rs.getInt("id"), rs.getString("title"), rs.getString("issue_date"),
+                    rs.getString("due_date"), rs.getString("return_date"),
+                    rs.getDouble("fine"), rs.getString("status")
+                });
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return records;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  DASHBOARD STATISTICS
+    // ══════════════════════════════════════════════════════════════════
+    public Map<String, Integer> getStats() {
+        Map<String, Integer> stats = new HashMap<>();
+        try (Connection conn = connect(); Statement stmt = conn.createStatement()) {
+            ResultSet rs1 = stmt.executeQuery("SELECT COUNT(*) FROM books");
+            stats.put("totalBooks", rs1.next() ? rs1.getInt(1) : 0);
+
+            ResultSet rs2 = stmt.executeQuery("SELECT COALESCE(SUM(total_qty), 0) FROM books");
+            stats.put("totalCopies", rs2.next() ? rs2.getInt(1) : 0);
+
+            ResultSet rs3 = stmt.executeQuery("SELECT COALESCE(SUM(available_qty), 0) FROM books");
+            stats.put("availableCopies", rs3.next() ? rs3.getInt(1) : 0);
+
+            ResultSet rs4 = stmt.executeQuery("SELECT COUNT(*) FROM issued_books WHERE status = 'ISSUED'");
+            stats.put("issuedBooks", rs4.next() ? rs4.getInt(1) : 0);
+
+            ResultSet rs5 = stmt.executeQuery("SELECT COUNT(*) FROM users WHERE role = 'user'");
+            stats.put("totalUsers", rs5.next() ? rs5.getInt(1) : 0);
+
+            ResultSet rs6 = stmt.executeQuery("SELECT COUNT(*) FROM issued_books WHERE status = 'RETURNED'");
+            stats.put("returnedBooks", rs6.next() ? rs6.getInt(1) : 0);
+
+            ResultSet rs7 = stmt.executeQuery(
+                "SELECT COALESCE(SUM(fine), 0) FROM issued_books WHERE status = 'RETURNED'");
+            stats.put("totalFines", rs7.next() ? rs7.getInt(1) : 0);
+
+            // Overdue count
+            ResultSet rs8 = stmt.executeQuery(
+                "SELECT COUNT(*) FROM issued_books WHERE status = 'ISSUED' AND due_date < date('now')");
+            stats.put("overdueBooks", rs8.next() ? rs8.getInt(1) : 0);
+
+        } catch (SQLException e) { e.printStackTrace(); }
+        return stats;
+    }
+
+    public List<String> getCategories() {
+        List<String> cats = new ArrayList<>();
+        cats.add("All");
+        try (Connection conn = connect(); Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT DISTINCT category FROM books WHERE category IS NOT NULL ORDER BY category")) {
+            while (rs.next()) cats.add(rs.getString("category"));
+        } catch (SQLException e) { e.printStackTrace(); }
+        return cats;
+    }
+}
+
+
+
+LoginFrame.java
+
+
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.awt.geom.*;
+import java.util.Map;
+
+public class LoginFrame extends JFrame {
+
+    private JTextField usernameField;
+    private JPasswordField passwordField;
+    private JLabel statusLabel;
+
+    public LoginFrame() {
+        setTitle("📚 Library Management System — Login");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(900, 560);
+        setLocationRelativeTo(null);
+        setResizable(false);
+
+        JPanel mainPanel = new JPanel(new GridLayout(1, 2));
+
+        // ── LEFT: Branding Panel ─────────────────────────────
+        JPanel leftPanel = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                GradientPaint gp = new GradientPaint(0, 0, new Color(26, 32, 53),
+                        getWidth(), getHeight(), new Color(86, 141, 229));
+                g2.setPaint(gp);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+                g2.dispose();
+            }
+        };
+        leftPanel.setLayout(new BoxLayout(leftPanel, BoxLayout.Y_AXIS));
+        leftPanel.setBorder(BorderFactory.createEmptyBorder(80, 50, 80, 50));
+
+        JLabel icon = new JLabel("📚");
+        icon.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 64));
+        icon.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel brandTitle = new JLabel("Library Manager");
+        brandTitle.setFont(new Font("Segoe UI", Font.BOLD, 30));
+        brandTitle.setForeground(Color.WHITE);
+        brandTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel brandSub = new JLabel("<html><center>Smart Automated Library<br>Management System</center></html>");
+        brandSub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        brandSub.setForeground(new Color(200, 215, 245));
+        brandSub.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel features = new JLabel("<html><center><br>✓ Issue & Return Books<br>"
+            + "✓ Smart Search & Filter<br>✓ Auto Fine Calculation<br>"
+            + "✓ Admin & User Dashboards<br>✓ Real-time Availability</center></html>");
+        features.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        features.setForeground(new Color(180, 200, 240));
+        features.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        leftPanel.add(Box.createVerticalGlue());
+        leftPanel.add(icon);
+        leftPanel.add(Box.createVerticalStrut(15));
+        leftPanel.add(brandTitle);
+        leftPanel.add(Box.createVerticalStrut(8));
+        leftPanel.add(brandSub);
+        leftPanel.add(Box.createVerticalStrut(20));
+        leftPanel.add(features);
+        leftPanel.add(Box.createVerticalGlue());
+
+        // ── RIGHT: Login Form ────────────────────────────────
+        JPanel rightPanel = new JPanel();
+        rightPanel.setBackground(UIComponents.PRIMARY_DARK);
+        rightPanel.setLayout(new GridBagLayout());
+
+        JPanel formBox = new JPanel();
+        formBox.setOpaque(false);
+        formBox.setLayout(new BoxLayout(formBox, BoxLayout.Y_AXIS));
+        formBox.setPreferredSize(new Dimension(320, 380));
+
+        JLabel loginTitle = new JLabel("Welcome Back");
+        loginTitle.setFont(UIComponents.FONT_TITLE);
+        loginTitle.setForeground(UIComponents.TEXT_PRIMARY);
+        loginTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel loginSub = new JLabel("Sign in to your account");
+        loginSub.setFont(UIComponents.FONT_BODY);
+        loginSub.setForeground(UIComponents.TEXT_SECONDARY);
+        loginSub.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel userLabel = new JLabel("USERNAME");
+        userLabel.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        userLabel.setForeground(UIComponents.TEXT_SECONDARY);
+        userLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        usernameField = UIComponents.createTextField("Enter username");
+        usernameField.setMaximumSize(new Dimension(320, 42));
+        usernameField.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel passLabel = new JLabel("PASSWORD");
+        passLabel.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        passLabel.setForeground(UIComponents.TEXT_SECONDARY);
+        passLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        passwordField = UIComponents.createPasswordField("Enter password");
+        passwordField.setMaximumSize(new Dimension(320, 42));
+        passwordField.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JButton loginBtn = UIComponents.createAccentButton("    Sign In    ");
+        loginBtn.setMaximumSize(new Dimension(320, 44));
+        loginBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+        loginBtn.setFont(new Font("Segoe UI", Font.BOLD, 15));
+
+        statusLabel = new JLabel(" ");
+        statusLabel.setFont(UIComponents.FONT_SMALL);
+        statusLabel.setForeground(UIComponents.DANGER);
+        statusLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel defaultCreds = new JLabel("<html><center>Default Admin → admin / admin123<br>"
+            + "Default User → student1 / pass123</center></html>");
+        defaultCreds.setFont(new Font("Segoe UI", Font.ITALIC, 11));
+        defaultCreds.setForeground(UIComponents.TEXT_SECONDARY);
+        defaultCreds.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        formBox.add(loginTitle);
+        formBox.add(Box.createVerticalStrut(5));
+        formBox.add(loginSub);
+        formBox.add(Box.createVerticalStrut(30));
+        formBox.add(userLabel);
+        formBox.add(Box.createVerticalStrut(6));
+        formBox.add(usernameField);
+        formBox.add(Box.createVerticalStrut(18));
+        formBox.add(passLabel);
+        formBox.add(Box.createVerticalStrut(6));
+        formBox.add(passwordField);
+        formBox.add(Box.createVerticalStrut(10));
+        formBox.add(statusLabel);
+        formBox.add(Box.createVerticalStrut(15));
+        formBox.add(loginBtn);
+        formBox.add(Box.createVerticalStrut(25));
+        formBox.add(defaultCreds);
+
+        rightPanel.add(formBox);
+
+        // ── Action Listener ──────────────────────────────────
+        ActionListener loginAction = e -> performLogin();
+        loginBtn.addActionListener(loginAction);
+        passwordField.addActionListener(loginAction);
+        usernameField.addActionListener(loginAction);
+
+        mainPanel.add(leftPanel);
+        mainPanel.add(rightPanel);
+        setContentPane(mainPanel);
+        setVisible(true);
+
+        usernameField.requestFocusInWindow();
+    }
+
+    private void performLogin() {
+        String username = usernameField.getText().trim();
+        String password = new String(passwordField.getPassword()).trim();
+
+        if (username.isEmpty() || password.isEmpty()) {
+            statusLabel.setText("⚠ Please enter both username and password");
+            return;
+        }
+
+        Map<String, String> user = DatabaseManager.getInstance().authenticate(username, password);
+
+        if (user != null) {
+            statusLabel.setForeground(UIComponents.SUCCESS);
+            statusLabel.setText("✓ Login successful! Redirecting...");
+
+            Timer timer = new Timer(500, e -> {
+                dispose();
+                if ("admin".equals(user.get("role"))) {
+                    new AdminDashboard(user);
+                } else {
+                    new UserDashboard(user);
+                }
+            });
+            timer.setRepeats(false);
+            timer.start();
+        } else {
+            statusLabel.setForeground(UIComponents.DANGER);
+            statusLabel.setText("✗ Invalid username or password!");
+            passwordField.setText("");
+        }
+    }
+}
+
+
+
+
+AdminDashboard.java
+
+
+import javax.swing.*;
+import javax.swing.table.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.util.List;
+import java.util.Map;
+
+public class AdminDashboard extends JFrame {
+
+    private final Map<String, String> currentUser;
+    private final DatabaseManager db = DatabaseManager.getInstance();
+    private JPanel contentPanel;
+    private CardLayout cardLayout;
+    private JPanel sidebarPanel;
+    private String activePage = "dashboard";
+
+    // Table models
+    private DefaultTableModel bookTableModel, userTableModel, issuedTableModel,
+                              returnedTableModel, allTransTableModel;
+
+    public AdminDashboard(Map<String, String> user) {
+        this.currentUser = user;
+        setTitle("📚 Admin Dashboard — Library Management System");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(1280, 780);
+        setLocationRelativeTo(null);
+        setMinimumSize(new Dimension(1100, 650));
+
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel.setBackground(UIComponents.PRIMARY_DARK);
+
+        // ── Sidebar ──────────────────────────────────────────
+        sidebarPanel = buildSidebar();
+        mainPanel.add(sidebarPanel, BorderLayout.WEST);
+
+        // ── Content Area ─────────────────────────────────────
+        cardLayout = new CardLayout();
+        contentPanel = new JPanel(cardLayout);
+        contentPanel.setBackground(UIComponents.PRIMARY_DARK);
+
+        contentPanel.add(buildDashboardPage(), "dashboard");
+        contentPanel.add(buildBooksPage(), "books");
+        contentPanel.add(buildUsersPage(), "users");
+        contentPanel.add(buildIssuePage(), "issue");
+        contentPanel.add(buildReturnPage(), "return");
+        contentPanel.add(buildTransactionsPage(), "transactions");
+
+        mainPanel.add(contentPanel, BorderLayout.CENTER);
+        setContentPane(mainPanel);
+        setVisible(true);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  SIDEBAR
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildSidebar() {
+        JPanel sidebar = new JPanel();
+        sidebar.setBackground(UIComponents.SIDEBAR);
+        sidebar.setPreferredSize(new Dimension(220, 0));
+        sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
+        sidebar.setBorder(BorderFactory.createEmptyBorder(15, 8, 15, 8));
+
+        // Brand
+        JLabel brand = new JLabel("  📚 LibManager");
+        brand.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        brand.setForeground(UIComponents.ACCENT);
+        brand.setAlignmentX(Component.LEFT_ALIGNMENT);
+        brand.setBorder(BorderFactory.createEmptyBorder(10, 12, 5, 0));
+
+        JLabel role = new JLabel("  Admin Panel");
+        role.setFont(UIComponents.FONT_SMALL);
+        role.setForeground(UIComponents.TEXT_SECONDARY);
+        role.setAlignmentX(Component.LEFT_ALIGNMENT);
+        role.setBorder(BorderFactory.createEmptyBorder(0, 12, 15, 0));
+
+        sidebar.add(brand);
+        sidebar.add(role);
+        sidebar.add(UIComponents.createSeparator());
+        sidebar.add(Box.createVerticalStrut(10));
+
+        String[] pages = {"dashboard", "books", "users", "issue", "return", "transactions"};
+        String[] labels = {"📊  Dashboard", "📖  Manage Books", "👥  Manage Users",
+                           "📤  Issue Book", "📥  Return Book", "📋  Transactions"};
+
+        for (int i = 0; i < pages.length; i++) {
+            final String page = pages[i];
+            JButton btn = UIComponents.createSidebarButton(labels[i], page.equals(activePage));
+            btn.addActionListener(e -> switchPage(page));
+            sidebar.add(btn);
+            sidebar.add(Box.createVerticalStrut(3));
+        }
+
+        sidebar.add(Box.createVerticalGlue());
+        sidebar.add(UIComponents.createSeparator());
+        sidebar.add(Box.createVerticalStrut(8));
+
+        // User info
+        JLabel userName = new JLabel("  👤 " + currentUser.get("full_name"));
+        userName.setFont(UIComponents.FONT_SMALL);
+        userName.setForeground(UIComponents.TEXT_SECONDARY);
+        userName.setAlignmentX(Component.LEFT_ALIGNMENT);
+        userName.setBorder(BorderFactory.createEmptyBorder(0, 12, 5, 0));
+        sidebar.add(userName);
+
+        JButton logoutBtn = UIComponents.createDangerButton("  Logout");
+        logoutBtn.setMaximumSize(new Dimension(200, 36));
+        logoutBtn.addActionListener(e -> {
+            dispose();
+            new LoginFrame();
+        });
+        sidebar.add(Box.createVerticalStrut(5));
+        sidebar.add(logoutBtn);
+
+        return sidebar;
+    }
+
+    private void switchPage(String page) {
+        activePage = page;
+        cardLayout.show(contentPanel, page);
+        refreshData();
+
+        // Rebuild sidebar to update active state
+        Container parent = sidebarPanel.getParent();
+        parent.remove(sidebarPanel);
+        sidebarPanel = buildSidebar();
+        parent.add(sidebarPanel, BorderLayout.WEST);
+        parent.revalidate();
+        parent.repaint();
+    }
+
+    private void refreshData() {
+        refreshBookTable();
+        refreshUserTable();
+        refreshIssuedTable();
+        refreshReturnedTable();
+        refreshAllTransTable();
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PAGE: DASHBOARD
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildDashboardPage() {
+        JPanel page = new JPanel(new BorderLayout(20, 20));
+        page.setBackground(UIComponents.PRIMARY_DARK);
+        page.setBorder(BorderFactory.createEmptyBorder(25, 25, 25, 25));
+
+        // Title
+        JLabel title = new JLabel("📊 Dashboard Overview");
+        title.setFont(UIComponents.FONT_TITLE);
+        title.setForeground(UIComponents.TEXT_PRIMARY);
+
+        Map<String, Integer> stats = db.getStats();
+
+        // Stats cards in a row
+        JPanel statsRow = new JPanel(new GridLayout(1, 4, 15, 0));
+        statsRow.setOpaque(false);
+        statsRow.add(UIComponents.createStatCard("TOTAL BOOKS", String.valueOf(stats.getOrDefault("totalBooks", 0)), UIComponents.ACCENT));
+        statsRow.add(UIComponents.createStatCard("BOOKS ISSUED", String.valueOf(stats.getOrDefault("issuedBooks", 0)), UIComponents.WARNING));
+        statsRow.add(UIComponents.createStatCard("REGISTERED USERS", String.valueOf(stats.getOrDefault("totalUsers", 0)), UIComponents.SUCCESS));
+        statsRow.add(UIComponents.createStatCard("OVERDUE BOOKS", String.valueOf(stats.getOrDefault("overdueBooks", 0)), UIComponents.DANGER));
+
+        JPanel statsRow2 = new JPanel(new GridLayout(1, 4, 15, 0));
+        statsRow2.setOpaque(false);
+        statsRow2.add(UIComponents.createStatCard("TOTAL COPIES", String.valueOf(stats.getOrDefault("totalCopies", 0)), UIComponents.ACCENT));
+        statsRow2.add(UIComponents.createStatCard("AVAILABLE COPIES", String.valueOf(stats.getOrDefault("availableCopies", 0)), UIComponents.SUCCESS));
+        statsRow2.add(UIComponents.createStatCard("RETURNED BOOKS", String.valueOf(stats.getOrDefault("returnedBooks", 0)), new Color(155, 89, 182)));
+        statsRow2.add(UIComponents.createStatCard("TOTAL FINES (₹)", String.valueOf(stats.getOrDefault("totalFines", 0)), UIComponents.DANGER));
+
+        // Refresh button
+        JButton refreshBtn = UIComponents.createAccentButton("↻ Refresh Stats");
+        refreshBtn.addActionListener(e -> switchPage("dashboard"));
+
+        JPanel topSection = new JPanel();
+        topSection.setOpaque(false);
+        topSection.setLayout(new BoxLayout(topSection, BoxLayout.Y_AXIS));
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        statsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        statsRow2.setAlignmentX(Component.LEFT_ALIGNMENT);
+        topSection.add(title);
+        topSection.add(Box.createVerticalStrut(20));
+        topSection.add(statsRow);
+        topSection.add(Box.createVerticalStrut(15));
+        topSection.add(statsRow2);
+        topSection.add(Box.createVerticalStrut(15));
+        topSection.add(refreshBtn);
+
+        page.add(topSection, BorderLayout.NORTH);
+
+        // Recent transactions table
+        JPanel tableSection = UIComponents.createCard();
+        tableSection.setLayout(new BorderLayout(0, 10));
+        JLabel recentLabel = UIComponents.createSectionLabel("📋 Recent Transactions");
+        allTransTableModel = new DefaultTableModel(
+            new String[]{"ID", "Book", "User", "Username", "Issue Date", "Due Date", "Return Date", "Fine (₹)", "Status"}, 0);
+        JTable table = UIComponents.createStyledTable(allTransTableModel);
+        refreshAllTransTable();
+        tableSection.add(recentLabel, BorderLayout.NORTH);
+        tableSection.add(UIComponents.createTableScrollPane(table), BorderLayout.CENTER);
+
+        page.add(tableSection, BorderLayout.CENTER);
+        return page;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PAGE: MANAGE BOOKS
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildBooksPage() {
+        JPanel page = new JPanel(new BorderLayout(15, 15));
+        page.setBackground(UIComponents.PRIMARY_DARK);
+        page.setBorder(BorderFactory.createEmptyBorder(25, 25, 25, 25));
+
+        // Title + Search Bar
+        JPanel topBar = new JPanel(new BorderLayout(15, 0));
+        topBar.setOpaque(false);
+
+        JLabel title = UIComponents.createSectionLabel("📖 Manage Books");
+        topBar.add(title, BorderLayout.WEST);
+
+        JPanel searchBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        searchBar.setOpaque(false);
+
+        JComboBox<String> filterCombo = UIComponents.createComboBox(
+            new String[]{"All", "Title", "Author", "ID", "ISBN", "Category"});
+        JTextField searchField = UIComponents.createTextField("Search books...");
+        searchField.setPreferredSize(new Dimension(220, 38));
+        JButton searchBtn = UIComponents.createAccentButton("🔍 Search");
+
+        searchBar.add(new JLabel("Filter:") {{ setForeground(UIComponents.TEXT_SECONDARY); setFont(UIComponents.FONT_BODY); }});
+        searchBar.add(filterCombo);
+        searchBar.add(searchField);
+        searchBar.add(searchBtn);
+
+        topBar.add(searchBar, BorderLayout.EAST);
+        page.add(topBar, BorderLayout.NORTH);
+
+        // Table
+        bookTableModel = new DefaultTableModel(
+            new String[]{"ID", "Title", "Author", "ISBN", "Category", "Total Qty", "Available", "Added"}, 0);
+        JTable bookTable = UIComponents.createStyledTable(bookTableModel);
+        refreshBookTable();
+
+        JPanel tableCard = UIComponents.createCard();
+        tableCard.setLayout(new BorderLayout());
+        tableCard.add(UIComponents.createTableScrollPane(bookTable), BorderLayout.CENTER);
+        page.add(tableCard, BorderLayout.CENTER);
+
+        // Bottom buttons + Add form
+        JPanel bottomPanel = new JPanel(new BorderLayout(15, 0));
+        bottomPanel.setOpaque(false);
+
+        // Add Book form
+        JPanel formCard = UIComponents.createCard();
+        formCard.setLayout(new BoxLayout(formCard, BoxLayout.Y_AXIS));
+        formCard.add(UIComponents.createSectionLabel("➕ Add New Book"));
+        formCard.add(Box.createVerticalStrut(10));
+
+        JTextField titleField = UIComponents.createTextField("Book Title");
+        JTextField authorField = UIComponents.createTextField("Author Name");
+        JTextField isbnField = UIComponents.createTextField("ISBN Number");
+        JTextField categoryField = UIComponents.createTextField("Category");
+        JTextField qtyField = UIComponents.createTextField("Quantity");
+
+        formCard.add(UIComponents.createFormRow("Title:", titleField));
+        formCard.add(Box.createVerticalStrut(6));
+        formCard.add(UIComponents.createFormRow("Author:", authorField));
+        formCard.add(Box.createVerticalStrut(6));
+        formCard.add(UIComponents.createFormRow("ISBN:", isbnField));
+        formCard.add(Box.createVerticalStrut(6));
+        formCard.add(UIComponents.createFormRow("Category:", categoryField));
+        formCard.add(Box.createVerticalStrut(6));
+        formCard.add(UIComponents.createFormRow("Quantity:", qtyField));
+        formCard.add(Box.createVerticalStrut(10));
+
+        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        btnRow.setOpaque(false);
+        JButton addBtn = UIComponents.createSuccessButton("➕ Add Book");
+        JButton editBtn = UIComponents.createWarningButton("✏ Update");
+        JButton deleteBtn = UIComponents.createDangerButton("🗑 Delete");
+        JButton clearBtn = UIComponents.createButton("Clear", UIComponents.INPUT_BG, UIComponents.TEXT_PRIMARY);
+
+        btnRow.add(addBtn);
+        btnRow.add(editBtn);
+        btnRow.add(deleteBtn);
+        btnRow.add(clearBtn);
+        formCard.add(btnRow);
+
+        bottomPanel.add(formCard, BorderLayout.CENTER);
+        page.add(bottomPanel, BorderLayout.SOUTH);
+
+        // ── Table row selection → fills form ──
+        bookTable.getSelectionModel().addListSelectionListener(e -> {
+            int row = bookTable.getSelectedRow();
+            if (row >= 0) {
+                titleField.setText(bookTableModel.getValueAt(row, 1).toString());
+                authorField.setText(bookTableModel.getValueAt(row, 2).toString());
+                isbnField.setText(bookTableModel.getValueAt(row, 3) != null ? bookTableModel.getValueAt(row, 3).toString() : "");
+                categoryField.setText(bookTableModel.getValueAt(row, 4) != null ? bookTableModel.getValueAt(row, 4).toString() : "");
+                qtyField.setText(bookTableModel.getValueAt(row, 5).toString());
+            }
+        });
+
+        // ── Actions ──
+        searchBtn.addActionListener(e -> {
+            String query = searchField.getText().trim();
+            String filter = filterCombo.getSelectedItem().toString();
+            bookTableModel.setRowCount(0);
+            List<Object[]> results = query.isEmpty() ? db.getAllBooks() : db.searchBooks(query, filter);
+            for (Object[] r : results) bookTableModel.addRow(r);
+        });
+        searchField.addActionListener(e -> searchBtn.doClick());
+
+        addBtn.addActionListener(e -> {
+            try {
+                if (titleField.getText().trim().isEmpty() || authorField.getText().trim().isEmpty()) {
+                    UIComponents.showError(this, "Title and Author are required!"); return;
+                }
+                int qty = Integer.parseInt(qtyField.getText().trim());
+                if (db.addBook(titleField.getText().trim(), authorField.getText().trim(),
+                        isbnField.getText().trim(), categoryField.getText().trim(), qty)) {
+                    UIComponents.showSuccess(this, "Book added successfully!");
+                    refreshBookTable();
+                    clearBtn.doClick();
+                } else {
+                    UIComponents.showError(this, "Failed to add book. ISBN might be duplicate.");
+                }
+            } catch (NumberFormatException ex) {
+                UIComponents.showError(this, "Please enter a valid quantity.");
+            }
+        });
+
+        editBtn.addActionListener(e -> {
+            int row = bookTable.getSelectedRow();
+            if (row < 0) { UIComponents.showError(this, "Select a book to update!"); return; }
+            try {
+                int id = (int) bookTableModel.getValueAt(row, 0);
+                int qty = Integer.parseInt(qtyField.getText().trim());
+                if (db.updateBook(id, titleField.getText().trim(), authorField.getText().trim(),
+                        isbnField.getText().trim(), categoryField.getText().trim(), qty)) {
+                    UIComponents.showSuccess(this, "Book updated successfully!");
+                    refreshBookTable();
+                } else {
+                    UIComponents.showError(this, "Update failed. Ensure quantity ≥ issued copies.");
+                }
+            } catch (NumberFormatException ex) {
+                UIComponents.showError(this, "Please enter a valid quantity.");
+            }
+        });
+
+        deleteBtn.addActionListener(e -> {
+            int row = bookTable.getSelectedRow();
+            if (row < 0) { UIComponents.showError(this, "Select a book to delete!"); return; }
+            int id = (int) bookTableModel.getValueAt(row, 0);
+            if (UIComponents.showConfirm(this, "Delete this book? (Only works if all copies returned)")) {
+                if (db.deleteBook(id)) {
+                    UIComponents.showSuccess(this, "Book deleted.");
+                    refreshBookTable(); clearBtn.doClick();
+                } else {
+                    UIComponents.showError(this, "Cannot delete — some copies are still issued.");
+                }
+            }
+        });
+
+        clearBtn.addActionListener(e -> {
+            titleField.setText(""); authorField.setText(""); isbnField.setText("");
+            categoryField.setText(""); qtyField.setText("");
+            bookTable.clearSelection();
+        });
+
+        return page;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PAGE: MANAGE USERS
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildUsersPage() {
+        JPanel page = new JPanel(new BorderLayout(15, 15));
+        page.setBackground(UIComponents.PRIMARY_DARK);
+        page.setBorder(BorderFactory.createEmptyBorder(25, 25, 25, 25));
+
+        JLabel title = UIComponents.createSectionLabel("👥 Manage Users");
+        page.add(title, BorderLayout.NORTH);
+
+        // Table
+        userTableModel = new DefaultTableModel(
+            new String[]{"ID", "Username", "Full Name", "Email", "Role", "Created"}, 0);
+        JTable userTable = UIComponents.createStyledTable(userTableModel);
+        refreshUserTable();
+
+        JPanel tableCard = UIComponents.createCard();
+        tableCard.setLayout(new BorderLayout());
+        tableCard.add(UIComponents.createTableScrollPane(userTable), BorderLayout.CENTER);
+        page.add(tableCard, BorderLayout.CENTER);
+
+        // Add User form
+        JPanel formCard = UIComponents.createCard();
+        formCard.setLayout(new BoxLayout(formCard, BoxLayout.Y_AXIS));
+        formCard.add(UIComponents.createSectionLabel("➕ Add / Edit User"));
+        formCard.add(Box.createVerticalStrut(10));
+
+        JTextField unameField = UIComponents.createTextField("Username");
+        JPasswordField passField = UIComponents.createPasswordField("Password");
+        JTextField fnameField = UIComponents.createTextField("Full Name");
+        JTextField emailField = UIComponents.createTextField("Email");
+        JComboBox<String> roleCombo = UIComponents.createComboBox(new String[]{"user", "admin"});
+
+        formCard.add(UIComponents.createFormRow("Username:", unameField));
+        formCard.add(Box.createVerticalStrut(6));
+        formCard.add(UIComponents.createFormRow("Password:", passField));
+        formCard.add(Box.createVerticalStrut(6));
+        formCard.add(UIComponents.createFormRow("Full Name:", fnameField));
+        formCard.add(Box.createVerticalStrut(6));
+        formCard.add(UIComponents.createFormRow("Email:", emailField));
+        formCard.add(Box.createVerticalStrut(6));
+        formCard.add(UIComponents.createFormRow("Role:", roleCombo));
+        formCard.add(Box.createVerticalStrut(10));
+
+        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        btnRow.setOpaque(false);
+        JButton addBtn = UIComponents.createSuccessButton("➕ Add User");
+        JButton editBtn = UIComponents.createWarningButton("✏ Update");
+        JButton deleteBtn = UIComponents.createDangerButton("🗑 Delete");
+        JButton clearBtn = UIComponents.createButton("Clear", UIComponents.INPUT_BG, UIComponents.TEXT_PRIMARY);
+        btnRow.add(addBtn); btnRow.add(editBtn); btnRow.add(deleteBtn); btnRow.add(clearBtn);
+        formCard.add(btnRow);
+
+        page.add(formCard, BorderLayout.SOUTH);
+
+        // Fill form on table select
+        userTable.getSelectionModel().addListSelectionListener(e -> {
+            int row = userTable.getSelectedRow();
+            if (row >= 0) {
+                unameField.setText(userTableModel.getValueAt(row, 1).toString());
+                fnameField.setText(userTableModel.getValueAt(row, 2).toString());
+                emailField.setText(userTableModel.getValueAt(row, 3) != null ? userTableModel.getValueAt(row, 3).toString() : "");
+                roleCombo.setSelectedItem(userTableModel.getValueAt(row, 4).toString());
+                passField.setText("");
+            }
+        });
+
+        addBtn.addActionListener(e -> {
+            String uname = unameField.getText().trim();
+            String pass = new String(passField.getPassword()).trim();
+            String fname = fnameField.getText().trim();
+            if (uname.isEmpty() || pass.isEmpty() || fname.isEmpty()) {
+                UIComponents.showError(this, "Username, Password, and Full Name are required!"); return;
+            }
+            if (db.addUser(uname, pass, fname, emailField.getText().trim(), roleCombo.getSelectedItem().toString())) {
+                UIComponents.showSuccess(this, "User added successfully!");
+                refreshUserTable(); clearBtn.doClick();
+            } else {
+                UIComponents.showError(this, "Failed. Username might be taken.");
+            }
+        });
+
+        editBtn.addActionListener(e -> {
+            int row = userTable.getSelectedRow();
+            if (row < 0) { UIComponents.showError(this, "Select a user!"); return; }
+            int id = (int) userTableModel.getValueAt(row, 0);
+            String pass = new String(passField.getPassword()).trim();
+            if (db.updateUser(id, fnameField.getText().trim(), emailField.getText().trim(), pass)) {
+                UIComponents.showSuccess(this, "User updated!"); refreshUserTable();
+            } else {
+                UIComponents.showError(this, "Update failed.");
+            }
+        });
+
+        deleteBtn.addActionListener(e -> {
+            int row = userTable.getSelectedRow();
+            if (row < 0) { UIComponents.showError(this, "Select a user!"); return; }
+            int id = (int) userTableModel.getValueAt(row, 0);
+            if (UIComponents.showConfirm(this, "Delete this user?")) {
+                if (db.deleteUser(id)) {
+                    UIComponents.showSuccess(this, "User deleted."); refreshUserTable(); clearBtn.doClick();
+                } else {
+                    UIComponents.showError(this, "Cannot delete admin accounts.");
+                }
+            }
+        });
+
+        clearBtn.addActionListener(e -> {
+            unameField.setText(""); passField.setText(""); fnameField.setText(""); emailField.setText("");
+            userTable.clearSelection();
+        });
+
+        return page;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PAGE: ISSUE BOOK
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildIssuePage() {
+        JPanel page = new JPanel(new BorderLayout(15, 15));
+        page.setBackground(UIComponents.PRIMARY_DARK);
+        page.setBorder(BorderFactory.createEmptyBorder(25, 25, 25, 25));
+
+        JLabel title = UIComponents.createSectionLabel("📤 Issue Book");
+        page.add(title, BorderLayout.NORTH);
+
+        // Issue form
+        JPanel formCard = UIComponents.createCard();
+        formCard.setLayout(new BoxLayout(formCard, BoxLayout.Y_AXIS));
+
+        JTextField bookIdField = UIComponents.createTextField("Enter Book ID");
+        JTextField userIdField = UIComponents.createTextField("Enter User ID");
+        JTextField daysField = UIComponents.createTextField("No. of Days (default: 14)");
+        JLabel resultLabel = new JLabel(" ");
+        resultLabel.setFont(UIComponents.FONT_BODY);
+        resultLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        formCard.add(UIComponents.createFormRow("Book ID:", bookIdField));
+        formCard.add(Box.createVerticalStrut(10));
+        formCard.add(UIComponents.createFormRow("User ID:", userIdField));
+        formCard.add(Box.createVerticalStrut(10));
+        formCard.add(UIComponents.createFormRow("Due Days:", daysField));
+        formCard.add(Box.createVerticalStrut(15));
+
+        JButton issueBtn = UIComponents.createSuccessButton("📤 Issue Book");
+        issueBtn.setPreferredSize(new Dimension(180, 44));
+        formCard.add(issueBtn);
+        formCard.add(Box.createVerticalStrut(10));
+        formCard.add(resultLabel);
+
+        page.add(formCard, BorderLayout.WEST);
+
+        // Currently issued table
+        issuedTableModel = new DefaultTableModel(
+            new String[]{"Issue ID", "Book ID", "Book Title", "User", "Username", "Issue Date", "Due Date", "Return", "Fine (₹)", "Status"}, 0);
+        JTable issuedTable = UIComponents.createStyledTable(issuedTableModel);
+        refreshIssuedTable();
+
+        JPanel tableCard = UIComponents.createCard();
+        tableCard.setLayout(new BorderLayout(0, 10));
+        tableCard.add(UIComponents.createSectionLabel("📋 Currently Issued Books"), BorderLayout.NORTH);
+        tableCard.add(UIComponents.createTableScrollPane(issuedTable), BorderLayout.CENTER);
+
+        page.add(tableCard, BorderLayout.CENTER);
+
+        // Action
+        issueBtn.addActionListener(e -> {
+            try {
+                int bookId = Integer.parseInt(bookIdField.getText().trim());
+                int userId = Integer.parseInt(userIdField.getText().trim());
+                int days = daysField.getText().trim().isEmpty() ? 14 : Integer.parseInt(daysField.getText().trim());
+
+                String result = db.issueBook(bookId, userId, days);
+                if (result.startsWith("SUCCESS")) {
+                    resultLabel.setForeground(UIComponents.SUCCESS);
+                    resultLabel.setText("✓ " + result.substring(9));
+                    refreshIssuedTable();
+                    bookIdField.setText(""); userIdField.setText(""); daysField.setText("");
+                } else {
+                    resultLabel.setForeground(UIComponents.DANGER);
+                    resultLabel.setText("✗ " + result);
+                }
+            } catch (NumberFormatException ex) {
+                resultLabel.setForeground(UIComponents.DANGER);
+                resultLabel.setText("✗ Please enter valid numeric IDs.");
+            }
+        });
+
+        return page;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PAGE: RETURN BOOK
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildReturnPage() {
+        JPanel page = new JPanel(new BorderLayout(15, 15));
+        page.setBackground(UIComponents.PRIMARY_DARK);
+        page.setBorder(BorderFactory.createEmptyBorder(25, 25, 25, 25));
+
+        JLabel title = UIComponents.createSectionLabel("📥 Return Book");
+        page.add(title, BorderLayout.NORTH);
+
+        // Return form
+        JPanel formCard = UIComponents.createCard();
+        formCard.setLayout(new BoxLayout(formCard, BoxLayout.Y_AXIS));
+        formCard.setPreferredSize(new Dimension(350, 0));
+
+        JTextField issueIdField = UIComponents.createTextField("Enter Issue ID");
+        JLabel resultLabel = new JLabel(" ");
+        resultLabel.setFont(UIComponents.FONT_BODY);
+        resultLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel hint = new JLabel("<html><i>Select a row from the table or enter Issue ID manually.<br>"
+            + "Fine: ₹10/day for late returns.</i></html>");
+        hint.setFont(UIComponents.FONT_SMALL);
+        hint.setForeground(UIComponents.TEXT_SECONDARY);
+        hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        formCard.add(UIComponents.createFormRow("Issue ID:", issueIdField));
+        formCard.add(Box.createVerticalStrut(10));
+        formCard.add(hint);
+        formCard.add(Box.createVerticalStrut(15));
+
+        JButton returnBtn = UIComponents.createSuccessButton("📥 Return Book");
+        returnBtn.setPreferredSize(new Dimension(180, 44));
+        formCard.add(returnBtn);
+        formCard.add(Box.createVerticalStrut(10));
+        formCard.add(resultLabel);
+
+        page.add(formCard, BorderLayout.WEST);
+
+        // Issued books table (click to select issue ID)
+        DefaultTableModel returnTableModel = new DefaultTableModel(
+            new String[]{"Issue ID", "Book ID", "Book Title", "User", "Username", "Issue Date", "Due Date", "Return", "Fine (₹)", "Status"}, 0);
+        JTable returnTable = UIComponents.createStyledTable(returnTableModel);
+
+        // Populate with issued books
+        List<Object[]> issued = db.getIssuedBooks();
+        for (Object[] r : issued) returnTableModel.addRow(r);
+
+        returnTable.getSelectionModel().addListSelectionListener(e -> {
+            int row = returnTable.getSelectedRow();
+            if (row >= 0) {
+                issueIdField.setText(returnTableModel.getValueAt(row, 0).toString());
+            }
+        });
+
+        JPanel tableCard = UIComponents.createCard();
+        tableCard.setLayout(new BorderLayout(0, 10));
+        tableCard.add(UIComponents.createSectionLabel("📋 Books Available for Return (Currently Issued)"), BorderLayout.NORTH);
+        tableCard.add(UIComponents.createTableScrollPane(returnTable), BorderLayout.CENTER);
+
+        page.add(tableCard, BorderLayout.CENTER);
+
+        // Action
+        returnBtn.addActionListener(e -> {
+            try {
+                int issueId = Integer.parseInt(issueIdField.getText().trim());
+                String result = db.returnBook(issueId);
+                if (result.startsWith("SUCCESS")) {
+                    resultLabel.setForeground(UIComponents.SUCCESS);
+                    resultLabel.setText("✓ " + result.substring(9));
+                    // Refresh table
+                    returnTableModel.setRowCount(0);
+                    for (Object[] r : db.getIssuedBooks()) returnTableModel.addRow(r);
+                    issueIdField.setText("");
+                } else {
+                    resultLabel.setForeground(UIComponents.DANGER);
+                    resultLabel.setText("✗ " + result);
+                }
+            } catch (NumberFormatException ex) {
+                resultLabel.setForeground(UIComponents.DANGER);
+                resultLabel.setText("✗ Enter a valid Issue ID.");
+            }
+        });
+
+        return page;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PAGE: ALL TRANSACTIONS
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildTransactionsPage() {
+        JPanel page = new JPanel(new BorderLayout(15, 15));
+        page.setBackground(UIComponents.PRIMARY_DARK);
+        page.setBorder(BorderFactory.createEmptyBorder(25, 25, 25, 25));
+
+        JPanel topBar = new JPanel(new BorderLayout());
+        topBar.setOpaque(false);
+        topBar.add(UIComponents.createSectionLabel("📋 All Transactions"), BorderLayout.WEST);
+
+        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        filterPanel.setOpaque(false);
+        JComboBox<String> statusFilter = UIComponents.createComboBox(new String[]{"All", "ISSUED", "RETURNED"});
+        JButton filterBtn = UIComponents.createAccentButton("Filter");
+        filterPanel.add(new JLabel("Status:") {{ setForeground(UIComponents.TEXT_SECONDARY); setFont(UIComponents.FONT_BODY); }});
+        filterPanel.add(statusFilter);
+        filterPanel.add(filterBtn);
+        topBar.add(filterPanel, BorderLayout.EAST);
+
+        page.add(topBar, BorderLayout.NORTH);
+
+        // Table
+        DefaultTableModel transModel = new DefaultTableModel(
+            new String[]{"ID", "Book", "User", "Username", "Issue Date", "Due Date", "Return Date", "Fine (₹)", "Status"}, 0);
+        JTable transTable = UIComponents.createStyledTable(transModel);
+
+        List<Object[]> all = db.getAllTransactions();
+        for (Object[] r : all) transModel.addRow(r);
+
+        // Custom cell renderer for status column
+        transTable.getColumnModel().getColumn(8).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(CENTER);
+                if (!isSelected) {
+                    if ("ISSUED".equals(value)) {
+                        setForeground(UIComponents.WARNING);
+                    } else if ("RETURNED".equals(value)) {
+                        setForeground(UIComponents.SUCCESS);
+                    }
+                }
+                return this;
+            }
+        });
+
+        JPanel tableCard = UIComponents.createCard();
+        tableCard.setLayout(new BorderLayout());
+        tableCard.add(UIComponents.createTableScrollPane(transTable), BorderLayout.CENTER);
+        page.add(tableCard, BorderLayout.CENTER);
+
+        filterBtn.addActionListener(e -> {
+            transModel.setRowCount(0);
+            String filter = statusFilter.getSelectedItem().toString();
+            List<Object[]> data;
+            if ("ISSUED".equals(filter)) data = db.getIssuedBooks();
+            else if ("RETURNED".equals(filter)) data = db.getReturnedBooks();
+            else data = db.getAllTransactions();
+
+            if ("All".equals(filter)) {
+                for (Object[] r : data) transModel.addRow(r);
+            } else {
+                for (Object[] r : data) {
+                    // Issued/Returned queries return 10 columns, transaction query returns 9
+                    if (r.length == 10) {
+                        transModel.addRow(new Object[]{r[0], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9]});
+                    } else {
+                        transModel.addRow(r);
+                    }
+                }
+            }
+        });
+
+        return page;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  TABLE REFRESH METHODS
+    // ══════════════════════════════════════════════════════════════════
+    private void refreshBookTable() {
+        if (bookTableModel == null) return;
+        bookTableModel.setRowCount(0);
+        for (Object[] r : db.getAllBooks()) bookTableModel.addRow(r);
+    }
+
+    private void refreshUserTable() {
+        if (userTableModel == null) return;
+        userTableModel.setRowCount(0);
+        for (Object[] r : db.getAllUsers()) userTableModel.addRow(r);
+    }
+
+    private void refreshIssuedTable() {
+        if (issuedTableModel == null) return;
+        issuedTableModel.setRowCount(0);
+        for (Object[] r : db.getIssuedBooks()) issuedTableModel.addRow(r);
+    }
+
+    private void refreshReturnedTable() {
+        if (returnedTableModel == null) return;
+        returnedTableModel.setRowCount(0);
+        for (Object[] r : db.getReturnedBooks()) returnedTableModel.addRow(r);
+    }
+
+    private void refreshAllTransTable() {
+        if (allTransTableModel == null) return;
+        allTransTableModel.setRowCount(0);
+        for (Object[] r : db.getAllTransactions()) allTransTableModel.addRow(r);
+    }
+}
+
+
+UserDashboard.java
+
+
+
+import javax.swing.*;
+import javax.swing.table.*;
+import java.awt.*;
+import java.util.*;
+import java.util.List;
+
+public class UserDashboard extends JFrame {
+
+    private final Map<String, String> currentUser;
+    private final DatabaseManager db = DatabaseManager.getInstance();
+    private JPanel contentPanel;
+    private CardLayout cardLayout;
+    private JPanel sidebarPanel;
+    private String activePage = "dashboard";
+
+    private DefaultTableModel myBooksModel, historyModel, catalogModel;
+
+    public UserDashboard(Map<String, String> user) {
+        this.currentUser = user;
+        setTitle("📚 User Dashboard — Library Management System");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(1200, 720);
+        setLocationRelativeTo(null);
+        setMinimumSize(new Dimension(1000, 600));
+
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel.setBackground(UIComponents.PRIMARY_DARK);
+
+        sidebarPanel = buildSidebar();
+        mainPanel.add(sidebarPanel, BorderLayout.WEST);
+
+        cardLayout = new CardLayout();
+        contentPanel = new JPanel(cardLayout);
+        contentPanel.setBackground(UIComponents.PRIMARY_DARK);
+
+        contentPanel.add(buildDashboardPage(), "dashboard");
+        contentPanel.add(buildCatalogPage(), "catalog");
+        contentPanel.add(buildMyBooksPage(), "mybooks");
+        contentPanel.add(buildHistoryPage(), "history");
+        contentPanel.add(buildProfilePage(), "profile");
+
+        mainPanel.add(contentPanel, BorderLayout.CENTER);
+        setContentPane(mainPanel);
+        setVisible(true);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  SIDEBAR
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildSidebar() {
+        JPanel sidebar = new JPanel();
+        sidebar.setBackground(UIComponents.SIDEBAR);
+        sidebar.setPreferredSize(new Dimension(220, 0));
+        sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
+        sidebar.setBorder(BorderFactory.createEmptyBorder(15, 8, 15, 8));
+
+        JLabel brand = new JLabel("  📚 LibManager");
+        brand.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        brand.setForeground(UIComponents.ACCENT);
+        brand.setAlignmentX(Component.LEFT_ALIGNMENT);
+        brand.setBorder(BorderFactory.createEmptyBorder(10, 12, 5, 0));
+
+        JLabel role = new JLabel("  Student Portal");
+        role.setFont(UIComponents.FONT_SMALL);
+        role.setForeground(UIComponents.TEXT_SECONDARY);
+        role.setAlignmentX(Component.LEFT_ALIGNMENT);
+        role.setBorder(BorderFactory.createEmptyBorder(0, 12, 15, 0));
+
+        sidebar.add(brand);
+        sidebar.add(role);
+        sidebar.add(UIComponents.createSeparator());
+        sidebar.add(Box.createVerticalStrut(10));
+
+        String[] pages = {"dashboard", "catalog", "mybooks", "history", "profile"};
+        String[] labels = {"📊  Dashboard", "📖  Book Catalog", "📚  My Books",
+                           "📋  History", "👤  Profile"};
+
+        for (int i = 0; i < pages.length; i++) {
+            final String page = pages[i];
+            JButton btn = UIComponents.createSidebarButton(labels[i], page.equals(activePage));
+            btn.addActionListener(e -> switchPage(page));
+            sidebar.add(btn);
+            sidebar.add(Box.createVerticalStrut(3));
+        }
+
+        sidebar.add(Box.createVerticalGlue());
+        sidebar.add(UIComponents.createSeparator());
+        sidebar.add(Box.createVerticalStrut(8));
+
+        JLabel userName = new JLabel("  👤 " + currentUser.get("full_name"));
+        userName.setFont(UIComponents.FONT_SMALL);
+        userName.setForeground(UIComponents.TEXT_SECONDARY);
+        userName.setAlignmentX(Component.LEFT_ALIGNMENT);
+        userName.setBorder(BorderFactory.createEmptyBorder(0, 12, 5, 0));
+        sidebar.add(userName);
+
+        JLabel userId = new JLabel("  ID: " + currentUser.get("id"));
+        userId.setFont(UIComponents.FONT_SMALL);
+        userId.setForeground(UIComponents.TEXT_SECONDARY);
+        userId.setAlignmentX(Component.LEFT_ALIGNMENT);
+        userId.setBorder(BorderFactory.createEmptyBorder(0, 12, 5, 0));
+        sidebar.add(userId);
+
+        JButton logoutBtn = UIComponents.createDangerButton("  Logout");
+        logoutBtn.setMaximumSize(new Dimension(200, 36));
+        logoutBtn.addActionListener(e -> { dispose(); new LoginFrame(); });
+        sidebar.add(Box.createVerticalStrut(5));
+        sidebar.add(logoutBtn);
+
+        return sidebar;
+    }
+
+    private void switchPage(String page) {
+        activePage = page;
+        cardLayout.show(contentPanel, page);
+        refreshData();
+
+        Container parent = sidebarPanel.getParent();
+        parent.remove(sidebarPanel);
+        sidebarPanel = buildSidebar();
+        parent.add(sidebarPanel, BorderLayout.WEST);
+        parent.revalidate();
+        parent.repaint();
+    }
+
+    private void refreshData() {
+        refreshMyBooks();
+        refreshHistory();
+        refreshCatalog(null, "All");
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PAGE: DASHBOARD
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildDashboardPage() {
+        JPanel page = new JPanel(new BorderLayout(20, 20));
+        page.setBackground(UIComponents.PRIMARY_DARK);
+        page.setBorder(BorderFactory.createEmptyBorder(25, 25, 25, 25));
+
+        JLabel title = new JLabel("👋 Welcome, " + currentUser.get("full_name") + "!");
+        title.setFont(UIComponents.FONT_TITLE);
+        title.setForeground(UIComponents.TEXT_PRIMARY);
+
+        int userId = Integer.parseInt(currentUser.get("id"));
+        List<Object[]> myBooks = db.getUserIssuedBooks(userId);
+
+        // Stats
+        int booksIssued = myBooks.size();
+        double totalFine = 0;
+        int overdue = 0;
+        for (Object[] b : myBooks) {
+            double fine = (double) b[6];
+            totalFine += fine;
+            long daysLeft = (long) b[5];
+            if (daysLeft < 0) overdue++;
+        }
+
+        JPanel statsRow = new JPanel(new GridLayout(1, 4, 15, 0));
+        statsRow.setOpaque(false);
+        statsRow.add(UIComponents.createStatCard("BOOKS WITH ME", String.valueOf(booksIssued), UIComponents.ACCENT));
+        statsRow.add(UIComponents.createStatCard("OVERDUE", String.valueOf(overdue), UIComponents.DANGER));
+        statsRow.add(UIComponents.createStatCard("PENDING FINE (₹)", String.format("%.0f", totalFine), UIComponents.WARNING));
+        statsRow.add(UIComponents.createStatCard("MY USER ID", currentUser.get("id"), UIComponents.SUCCESS));
+
+        JPanel top = new JPanel();
+        top.setOpaque(false);
+        top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        statsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        top.add(title);
+        top.add(Box.createVerticalStrut(20));
+        top.add(statsRow);
+
+        page.add(top, BorderLayout.NORTH);
+
+        // My current books
+        myBooksModel = new DefaultTableModel(
+            new String[]{"Issue ID", "Title", "Author", "Issue Date", "Due Date", "Days Left", "Fine (₹)"}, 0);
+        JTable table = UIComponents.createStyledTable(myBooksModel);
+        refreshMyBooks();
+
+        // Color code overdue rows
+        table.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
+                if (!isSelected) {
+                    Object daysObj = table.getModel().getValueAt(row, 5);
+                    long days = daysObj instanceof Long ? (Long) daysObj : 0;
+                    if (days < 0) {
+                        setBackground(new Color(255, 71, 87, 25));
+                        if (column == 5 || column == 6) setForeground(UIComponents.DANGER);
+                        else setForeground(UIComponents.TEXT_PRIMARY);
+                    } else if (days <= 2) {
+                        setBackground(new Color(255, 165, 2, 20));
+                        setForeground(UIComponents.TEXT_PRIMARY);
+                    } else {
+                        setBackground(row % 2 == 0 ? UIComponents.PRIMARY : UIComponents.TABLE_ROW_ALT);
+                        setForeground(UIComponents.TEXT_PRIMARY);
+                    }
+                }
+                return this;
+            }
+        });
+
+        JPanel tableCard = UIComponents.createCard();
+        tableCard.setLayout(new BorderLayout(0, 10));
+        tableCard.add(UIComponents.createSectionLabel("📚 My Currently Issued Books"), BorderLayout.NORTH);
+        tableCard.add(UIComponents.createTableScrollPane(table), BorderLayout.CENTER);
+
+        page.add(tableCard, BorderLayout.CENTER);
+        return page;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PAGE: BOOK CATALOG (Search & Browse)
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildCatalogPage() {
+        JPanel page = new JPanel(new BorderLayout(15, 15));
+        page.setBackground(UIComponents.PRIMARY_DARK);
+        page.setBorder(BorderFactory.createEmptyBorder(25, 25, 25, 25));
+
+        // Top: search + filter
+        JPanel topBar = new JPanel(new BorderLayout(15, 0));
+        topBar.setOpaque(false);
+
+        JLabel title = UIComponents.createSectionLabel("📖 Book Catalog");
+        topBar.add(title, BorderLayout.WEST);
+
+        JPanel searchBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        searchBar.setOpaque(false);
+
+        JComboBox<String> filterCombo = UIComponents.createComboBox(
+            new String[]{"All", "Title", "Author", "ID", "ISBN", "Category"});
+        JTextField searchField = UIComponents.createTextField("Search books...");
+        searchField.setPreferredSize(new Dimension(230, 38));
+        JButton searchBtn = UIComponents.createAccentButton("🔍 Search");
+        JButton resetBtn = UIComponents.createButton("Reset", UIComponents.INPUT_BG, UIComponents.TEXT_PRIMARY);
+
+        searchBar.add(new JLabel("Filter:") {{ setForeground(UIComponents.TEXT_SECONDARY); setFont(UIComponents.FONT_BODY); }});
+        searchBar.add(filterCombo);
+        searchBar.add(searchField);
+        searchBar.add(searchBtn);
+        searchBar.add(resetBtn);
+        topBar.add(searchBar, BorderLayout.EAST);
+
+        page.add(topBar, BorderLayout.NORTH);
+
+        // Table
+        catalogModel = new DefaultTableModel(
+            new String[]{"ID", "Title", "Author", "ISBN", "Category", "Total", "Available", "Added"}, 0);
+        JTable catalogTable = UIComponents.createStyledTable(catalogModel);
+        refreshCatalog(null, "All");
+
+        // Custom renderer: color-code availability
+        catalogTable.getColumnModel().getColumn(6).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(CENTER);
+                setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
+                if (!isSelected) {
+                    int avail = value != null ? Integer.parseInt(value.toString()) : 0;
+                    if (avail == 0) setForeground(UIComponents.DANGER);
+                    else if (avail <= 2) setForeground(UIComponents.WARNING);
+                    else setForeground(UIComponents.SUCCESS);
+                    setBackground(row % 2 == 0 ? UIComponents.PRIMARY : UIComponents.TABLE_ROW_ALT);
+                }
+                return this;
+            }
+        });
+
+        JPanel tableCard = UIComponents.createCard();
+        tableCard.setLayout(new BorderLayout());
+        tableCard.add(UIComponents.createTableScrollPane(catalogTable), BorderLayout.CENTER);
+
+        // Results count
+        JLabel countLabel = new JLabel("Showing all books");
+        countLabel.setFont(UIComponents.FONT_SMALL);
+        countLabel.setForeground(UIComponents.TEXT_SECONDARY);
+        countLabel.setBorder(BorderFactory.createEmptyBorder(8, 5, 0, 0));
+        tableCard.add(countLabel, BorderLayout.SOUTH);
+
+        page.add(tableCard, BorderLayout.CENTER);
+
+        // Actions
+        searchBtn.addActionListener(e -> {
+            String query = searchField.getText().trim();
+            String filter = filterCombo.getSelectedItem().toString();
+            catalogModel.setRowCount(0);
+            List<Object[]> results = query.isEmpty() ? db.getAllBooks() : db.searchBooks(query, filter);
+            for (Object[] r : results) catalogModel.addRow(r);
+            countLabel.setText("Found " + results.size() + " book(s)");
+        });
+        searchField.addActionListener(e -> searchBtn.doClick());
+
+        resetBtn.addActionListener(e -> {
+            searchField.setText("");
+            filterCombo.setSelectedIndex(0);
+            refreshCatalog(null, "All");
+            countLabel.setText("Showing all books");
+        });
+
+        return page;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PAGE: MY BOOKS (Currently Issued)
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildMyBooksPage() {
+        JPanel page = new JPanel(new BorderLayout(15, 15));
+        page.setBackground(UIComponents.PRIMARY_DARK);
+        page.setBorder(BorderFactory.createEmptyBorder(25, 25, 25, 25));
+
+        JLabel title = UIComponents.createSectionLabel("📚 My Issued Books");
+        page.add(title, BorderLayout.NORTH);
+
+        if (myBooksModel == null) {
+            myBooksModel = new DefaultTableModel(
+                new String[]{"Issue ID", "Title", "Author", "Issue Date", "Due Date", "Days Left", "Fine (₹)"}, 0);
+        }
+        JTable table = UIComponents.createStyledTable(myBooksModel);
+        refreshMyBooks();
+
+        JPanel tableCard = UIComponents.createCard();
+        tableCard.setLayout(new BorderLayout(0, 10));
+
+        JLabel info = new JLabel("<html>📌 <b>Fine Policy:</b> ₹10 per day for late returns  |  "
+            + "⚠ Red rows = Overdue  |  🟡 Yellow rows = Due within 2 days</html>");
+        info.setFont(UIComponents.FONT_SMALL);
+        info.setForeground(UIComponents.TEXT_SECONDARY);
+
+        tableCard.add(info, BorderLayout.NORTH);
+        tableCard.add(UIComponents.createTableScrollPane(table), BorderLayout.CENTER);
+
+        JButton refreshBtn = UIComponents.createAccentButton("↻ Refresh");
+        refreshBtn.addActionListener(e -> refreshMyBooks());
+        tableCard.add(refreshBtn, BorderLayout.SOUTH);
+
+        page.add(tableCard, BorderLayout.CENTER);
+        return page;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PAGE: HISTORY
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildHistoryPage() {
+        JPanel page = new JPanel(new BorderLayout(15, 15));
+        page.setBackground(UIComponents.PRIMARY_DARK);
+        page.setBorder(BorderFactory.createEmptyBorder(25, 25, 25, 25));
+
+        JLabel title = UIComponents.createSectionLabel("📋 Borrowing History");
+        page.add(title, BorderLayout.NORTH);
+
+        historyModel = new DefaultTableModel(
+            new String[]{"ID", "Book Title", "Issue Date", "Due Date", "Return Date", "Fine (₹)", "Status"}, 0);
+        JTable table = UIComponents.createStyledTable(historyModel);
+        refreshHistory();
+
+        // Status renderer
+        table.getColumnModel().getColumn(6).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                setHorizontalAlignment(CENTER);
+                setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
+                if (!isSelected) {
+                    setBackground(row % 2 == 0 ? UIComponents.PRIMARY : UIComponents.TABLE_ROW_ALT);
+                    if ("ISSUED".equals(value)) setForeground(UIComponents.WARNING);
+                    else if ("RETURNED".equals(value)) setForeground(UIComponents.SUCCESS);
+                }
+                return this;
+            }
+        });
+
+        JPanel tableCard = UIComponents.createCard();
+        tableCard.setLayout(new BorderLayout());
+        tableCard.add(UIComponents.createTableScrollPane(table), BorderLayout.CENTER);
+
+        page.add(tableCard, BorderLayout.CENTER);
+        return page;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  PAGE: PROFILE
+    // ══════════════════════════════════════════════════════════════════
+    private JPanel buildProfilePage() {
+        JPanel page = new JPanel(new GridBagLayout());
+        page.setBackground(UIComponents.PRIMARY_DARK);
+
+        JPanel card = UIComponents.createCard();
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setPreferredSize(new Dimension(450, 420));
+
+        JLabel title = UIComponents.createSectionLabel("👤 My Profile");
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JTextField nameField = UIComponents.createTextField(currentUser.get("full_name"));
+        nameField.setText(currentUser.get("full_name"));
+
+        JTextField emailField = UIComponents.createTextField(currentUser.getOrDefault("email", ""));
+        emailField.setText(currentUser.getOrDefault("email", ""));
+
+        JPasswordField passField = UIComponents.createPasswordField("New Password (leave blank to keep)");
+
+        JLabel usernameLabel = UIComponents.createBodyLabel("Username: " + currentUser.get("username"));
+        usernameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel idLabel = UIComponents.createBodyLabel("User ID: " + currentUser.get("id"));
+        idLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel roleLabel = UIComponents.createBodyLabel("Role: " + currentUser.get("role").toUpperCase());
+        roleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        card.add(title);
+        card.add(Box.createVerticalStrut(15));
+        card.add(idLabel);
+        card.add(Box.createVerticalStrut(5));
+        card.add(usernameLabel);
+        card.add(Box.createVerticalStrut(5));
+        card.add(roleLabel);
+        card.add(Box.createVerticalStrut(20));
+        card.add(UIComponents.createFormRow("Full Name:", nameField));
+        card.add(Box.createVerticalStrut(8));
+        card.add(UIComponents.createFormRow("Email:", emailField));
+        card.add(Box.createVerticalStrut(8));
+        card.add(UIComponents.createFormRow("Password:", passField));
+        card.add(Box.createVerticalStrut(20));
+
+        JButton saveBtn = UIComponents.createSuccessButton("💾 Save Changes");
+        saveBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.add(saveBtn);
+
+        JLabel result = new JLabel(" ");
+        result.setFont(UIComponents.FONT_BODY);
+        result.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.add(Box.createVerticalStrut(10));
+        card.add(result);
+
+        saveBtn.addActionListener(e -> {
+            int id = Integer.parseInt(currentUser.get("id"));
+            String pass = new String(passField.getPassword()).trim();
+            if (db.updateUser(id, nameField.getText().trim(), emailField.getText().trim(), pass)) {
+                currentUser.put("full_name", nameField.getText().trim());
+                currentUser.put("email", emailField.getText().trim());
+                result.setForeground(UIComponents.SUCCESS);
+                result.setText("✓ Profile updated successfully!");
+                passField.setText("");
+            } else {
+                result.setForeground(UIComponents.DANGER);
+                result.setText("✗ Failed to update profile.");
+            }
+        });
+
+        page.add(card);
+        return page;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  REFRESH METHODS
+    // ══════════════════════════════════════════════════════════════════
+    private void refreshMyBooks() {
+        if (myBooksModel == null) return;
+        myBooksModel.setRowCount(0);
+        int userId = Integer.parseInt(currentUser.get("id"));
+        for (Object[] r : db.getUserIssuedBooks(userId)) myBooksModel.addRow(r);
+    }
+
+    private void refreshHistory() {
+        if (historyModel == null) return;
+        historyModel.setRowCount(0);
+        int userId = Integer.parseInt(currentUser.get("id"));
+        for (Object[] r : db.getUserHistory(userId)) historyModel.addRow(r);
+    }
+
+    private void refreshCatalog(String query, String filter) {
+        if (catalogModel == null) return;
+        catalogModel.setRowCount(0);
+        List<Object[]> books = (query == null || query.isEmpty()) ? db.getAllBooks() : db.searchBooks(query, filter);
+        for (Object[] r : books) catalogModel.addRow(r);
+    }
+}
