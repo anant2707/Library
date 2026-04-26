@@ -1,0 +1,883 @@
+//Q1(a)  FROM PAPER 1  [5 marks]  GymMember – Constructor Overloading
+//Develop a Java program to implement Fitness Gym Membership System. Create a GymMember class with attributes memberID, name, membershipType, feePaid, validityMonths. Overload constructors: first accepts memberID, name, membershipType only; second accepts all attributes. Implement display() to show membership details.
+
+public class GymMember {
+    int memberID;
+    String name, membershipType;
+    double feePaid;
+    int validityMonths;
+
+    // Constructor 1: 3 parameters
+    GymMember(int memberID, String name, String membershipType) {
+        this.memberID = memberID; this.name = name;
+        this.membershipType = membershipType;
+        this.feePaid = 0.0; this.validityMonths = 0;
+    }
+    // Constructor 2: all 5 parameters
+    GymMember(int memberID, String name, String membershipType,
+              double feePaid, int validityMonths) {
+        this.memberID = memberID; this.name = name;
+        this.membershipType = membershipType;
+        this.feePaid = feePaid; this.validityMonths = validityMonths;
+    }
+    void display() {
+        System.out.println("ID: " + memberID + ", Name: " + name +
+            ", Type: " + membershipType + ", Fee: " + feePaid +
+            ", Validity: " + validityMonths + " months");
+    }
+    public static void main(String[] args) {
+        GymMember m1 = new GymMember(101, "Anjali", "Gold");
+        GymMember m2 = new GymMember(102, "Rohan", "Platinum", 12000, 12);
+        m1.display(); m2.display();
+    }
+}
+
+
+//Q1(a)  EXTRA PRACTICE  [5 marks]  Book Store – Constructor Overloading (output-based)
+//Create a class Book with data members: bookId, title, author, price. Overload constructors — first takes bookId and title only; second takes all four fields. Add display() method. Create one object of each and show output.
+
+public class Book {
+    int bookId;
+    String title, author;
+    double price;
+
+    // Constructor 1
+    Book(int bookId, String title) {
+        this.bookId = bookId; this.title = title;
+        this.author = "Unknown"; this.price = 0.0;
+    }
+    // Constructor 2
+    Book(int bookId, String title, String author, double price) {
+        this.bookId = bookId; this.title = title;
+        this.author = author; this.price = price;
+    }
+    void display() {
+        System.out.println("ID: " + bookId + " | Title: " + title +
+            " | Author: " + author + " | Price: Rs." + price);
+    }
+    public static void main(String[] args) {
+        Book b1 = new Book(1, "Java Basics");
+        Book b2 = new Book(2, "OOP in Java", "Herbert Schildt", 450.0);
+        System.out.println("--- Book Details ---");
+        b1.display();
+        b2.display();
+    }
+}
+
+
+//Q1(b)  FROM PAPER 2  [5 marks]  Member → Employee & Manager (Hierarchical Inheritance)
+//Create class Member with Name, Age, Phone, Address, Salary and printSalary(). Classes Employee (specialization) and Manager (department) inherit Member. Create objects of both and print details.
+
+class Member {
+    String name; int age; long phone; String address; double salary;
+    Member(String n, int a, long p, String ad, double s) {
+        name=n; age=a; phone=p; address=ad; salary=s;
+    }
+    void printSalary() { System.out.println("Salary: Rs." + salary); }
+    void display() {
+        System.out.println("Name: " + name + ", Age: " + age +
+            ", Phone: " + phone + ", Address: " + address);
+        printSalary();
+    }
+}
+class Employee extends Member {
+    String specialization;
+    Employee(String n,int a,long p,String ad,double s,String sp) {
+        super(n,a,p,ad,s); this.specialization=sp;
+    }
+    void showEmployee() {
+        System.out.println("-- Employee --"); display();
+        System.out.println("Specialization: " + specialization);
+    }
+}
+class Manager extends Member {
+    String department;
+    Manager(String n,int a,long p,String ad,double s,String dep) {
+        super(n,a,p,ad,s); this.department=dep;
+    }
+    void showManager() {
+        System.out.println("-- Manager --"); display();
+        System.out.println("Department: " + department);
+    }
+}
+public class MemberDemo {
+    public static void main(String[] args) {
+        Employee e = new Employee("Ravi",28,9876543210L,"Mumbai",45000,"Java Dev");
+        Manager  m = new Manager("Sunita",38,9123456789L,"Delhi",85000,"IT Dept");
+        e.showEmployee(); System.out.println();
+        m.showManager();
+    }
+}
+
+
+//Q1(b)  EXTRA PRACTICE  [5 marks]  Vehicle → Car & Bike (Hierarchical Inheritance)
+//Create class Vehicle with fuel and speed. Subclasses Car (doors) and Bike (hasSidecar). Both override a describe() method. Demonstrate hierarchical inheritance.
+
+class Vehicle {
+    String fuel; int speed;
+    Vehicle(String fuel, int speed) { this.fuel=fuel; this.speed=speed; }
+    void describe() {
+        System.out.println("Fuel: "+fuel+", Max Speed: "+speed+" km/h");
+    }
+}
+class Car extends Vehicle {
+    int doors;
+    Car(String fuel,int speed,int doors) { super(fuel,speed); this.doors=doors; }
+    @Override
+    void describe() {
+        System.out.print("CAR -> "); super.describe();
+        System.out.println("Doors: " + doors);
+    }
+}
+class Bike extends Vehicle {
+    boolean hasSidecar;
+    Bike(String fuel,int speed,boolean sc) { super(fuel,speed); hasSidecar=sc; }
+    @Override
+    void describe() {
+        System.out.print("BIKE -> "); super.describe();
+        System.out.println("Sidecar: " + hasSidecar);
+    }
+}
+public class VehicleDemo {
+    public static void main(String[] args) {
+        new Car("Petrol",180,4).describe();
+        new Bike("Petrol",140,false).describe();
+    }
+}
+
+
+//Q1(c)  FROM PAPER 1  [5 marks]  Discount Calculator GUI (Swing)
+//Develop a GUI in Java using Swing that accepts original price and discount % from the shopper and on clicking a discount button displays the discounted price.
+
+import javax.swing.*;
+import java.awt.*; import java.awt.event.*;
+public class DiscountCalculator extends JFrame implements ActionListener {
+    JTextField priceField, discountField, resultField;
+    JButton calcBtn;
+    DiscountCalculator() {
+        setTitle("Discount Calculator");
+        setLayout(new GridLayout(4, 2, 10, 10));
+        add(new JLabel("Original Price (Rs):")); priceField=new JTextField(); add(priceField);
+        add(new JLabel("Discount %:")); discountField=new JTextField(); add(discountField);
+        calcBtn=new JButton("Calculate Discount");
+        calcBtn.addActionListener(this); add(calcBtn);
+        add(new JLabel("Discounted Price:"));
+        resultField=new JTextField(); resultField.setEditable(false); add(resultField);
+        setSize(350,200); setDefaultCloseOperation(EXIT_ON_CLOSE); setVisible(true);
+    }
+    public void actionPerformed(ActionEvent e) {
+        try {
+            double p = Double.parseDouble(priceField.getText());
+            double d = Double.parseDouble(discountField.getText());
+            resultField.setText(String.format("%.2f", p - p*d/100));
+        } catch(NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this,"Enter valid numbers!");
+        }
+    }
+    public static void main(String[] args) { new DiscountCalculator(); }
+}
+
+
+
+//Q1(c)  EXTRA PRACTICE  [5 marks]  GUI Feedback Form (JTextArea + Submit + Reset)
+Unit VI	GUI based (Swings)
+
+Create a Java GUI Feedback Form using Swing that has a text area for user and two buttons – Submit and Reset. When Submit is clicked, display 'Successfully submitted' and when Reset is clicked, the entered text gets erased from text area.
+
+
+
+import javax.swing.*;
+import java.awt.*; import java.awt.event.*;
+public class FeedbackForm extends JFrame implements ActionListener {
+    JTextArea textArea; JButton submitBtn, resetBtn; JLabel statusLabel;
+    FeedbackForm() {
+        setTitle("Feedback Form"); setLayout(new BorderLayout(10,10));
+        JLabel hd = new JLabel("Enter Your Feedback:",JLabel.CENTER);
+        hd.setFont(new Font("Arial",Font.BOLD,14)); add(hd,BorderLayout.NORTH);
+        textArea = new JTextArea(7,30); textArea.setLineWrap(true);
+        add(new JScrollPane(textArea), BorderLayout.CENTER);
+        JPanel p = new JPanel(new FlowLayout());
+        submitBtn=new JButton("Submit"); resetBtn=new JButton("Reset");
+        submitBtn.addActionListener(this); resetBtn.addActionListener(this);
+        p.add(submitBtn); p.add(resetBtn);
+        statusLabel=new JLabel("",JLabel.CENTER);
+        statusLabel.setForeground(Color.BLUE);
+        JPanel south=new JPanel(new BorderLayout());
+        south.add(p,BorderLayout.NORTH); south.add(statusLabel,BorderLayout.SOUTH);
+        add(south,BorderLayout.SOUTH);
+        setSize(400,300); setDefaultCloseOperation(EXIT_ON_CLOSE); setVisible(true);
+    }
+    public void actionPerformed(ActionEvent e) {
+        if(e.getSource()==submitBtn) statusLabel.setText("Successfully submitted");
+        else { textArea.setText(""); statusLabel.setText(""); }
+    }
+    public static void main(String[] args) { new FeedbackForm(); }
+}
+
+
+//Q1(d)  FROM PAPER 1  [5 marks]  ArrayList – Friends List with Iterator, Search & Remove
+Unit VII	ArrayList Collections
+
+Use ArrayList to store 5 friends' names. Display using Iterator. Check if 'xyz' is present. Remove one friend and display updated list.
+
+
+import java.util.*;
+public class FriendList {
+    public static void main(String[] args) {
+        ArrayList<String> friends = new ArrayList<>();
+        friends.add("Aarav"); friends.add("Bhavna"); friends.add("xyz");
+        friends.add("Deepak"); friends.add("Esha");
+        System.out.println("List (Iterator):");
+        Iterator<String> it = friends.iterator();
+        while(it.hasNext()) System.out.println("  " + it.next());
+        System.out.println("'xyz' present? " + friends.contains("xyz"));
+        friends.remove("Deepak");
+        System.out.println("After removing Deepak: " + friends);
+    }
+}
+
+
+//Q1(d)  EXTRA PRACTICE  [5 marks]  ArrayList of integers – add, sort, search, remove
+Unit VII	ArrayList Collections
+
+Create an ArrayList of 5 integers. Display using for-each. Sort the list. Search for a value. Remove an element by index. Print final list size.
+
+
+
+import java.util.*;
+public class ArrayListOps {
+    public static void main(String[] args) {
+        ArrayList<Integer> nums = new ArrayList<>();
+        nums.add(40); nums.add(10); nums.add(30); nums.add(20); nums.add(50);
+        System.out.println("Original: " + nums);
+        Collections.sort(nums);
+        System.out.println("Sorted  : " + nums);
+        int search = 30;
+        System.out.println("Index of " + search + ": " + nums.indexOf(search));
+        nums.remove(Integer.valueOf(10));
+        System.out.println("After remove 10: " + nums);
+        System.out.println("Size: " + nums.size());
+        System.out.print("For-each: ");
+        for(int n : nums) System.out.print(n + " ");
+    }
+}
+
+
+//Q2(a)  FROM PAPER 1  [5 marks]  Airline Ticket Booking System using Packages
+Unit I	OOP Datatypes / Packages / Classes
+
+Develop an Airline Ticket Booking System using Java packages. Create a package 'airline' with class Ticket (passengerName, flightNumber, seatNumber, ticketPrice). Methods: displayTicketInfo(), applyDiscount(double). Second file TicketBooking.java uses the package.
+
+//code1
+package airline;
+public class Ticket {
+    private String passengerName, flightNumber, seatNumber;
+    private double ticketPrice;
+    public Ticket(String pn,String fn,String sn,double tp) {
+        passengerName=pn; flightNumber=fn; seatNumber=sn; ticketPrice=tp;
+    }
+    public void displayTicketInfo() {
+        System.out.println("Passenger: "+passengerName+", Flight: "+flightNumber+
+            ", Seat: "+seatNumber+", Price: Rs."+ticketPrice);
+    }
+    public double applyDiscount(double disc) {
+        return ticketPrice - ticketPrice * disc / 100;
+    }
+}
+
+//code2
+import airline.Ticket;
+import java.util.Scanner;
+public class TicketBooking {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        System.out.print("Passenger Name: "); String name = sc.nextLine();
+        System.out.print("Flight No     : "); String fn = sc.nextLine();
+        System.out.print("Seat No       : "); String seat = sc.nextLine();
+        System.out.print("Ticket Price  : "); double price = sc.nextDouble();
+        System.out.print("Discount (%)  : "); double disc  = sc.nextDouble();
+        Ticket t = new Ticket(name, fn, seat, price);
+        t.displayTicketInfo();
+        System.out.println("Final Fare (after "+disc+"% off): Rs." + t.applyDiscount(disc));
+        sc.close();
+    }
+}
+
+//Q2(a)  EXTRA PRACTICE  [5 marks]  Student class – OOP with data types, getters & setters
+Unit I	OOP Datatypes
+
+Create a Student class with private data members: rollNo (int), name (String), percentage (double), isPass (boolean). Use a parameterized constructor and getter methods. In main(), create 2 objects and display their details.
+
+
+public class Student {
+    private int rollNo;
+    private String name;
+    private double percentage;
+    private boolean isPass;
+    Student(int r, String n, double p) {
+        rollNo=r; name=n; percentage=p;
+        isPass = (p >= 40);
+    }
+    int getRollNo()       { return rollNo; }
+    String getName()      { return name; }
+    double getPercentage(){ return percentage; }
+    boolean getIsPass()   { return isPass; }
+    void display() {
+        System.out.println("Roll: "+rollNo+" | Name: "+name+
+            " | %: "+percentage+" | Pass: "+isPass);
+    }
+    public static void main(String[] args) {
+        new Student(101,"Aisha",78.5).display();
+        new Student(102,"Raj",35.0).display();
+    }
+}
+
+
+//Q2(b)  FROM PAPER 2  [5 marks]  Electricity Bill – if-else + switch control statements
+Unit II	Control Statements
+
+Electricity board rates: first 100 units = 50P, 100-300 = 75P, beyond 300 = 60P. If total > Rs.250 add 15% surcharge on the difference. Use constructors and method override concepts.
+
+
+class Electricity {
+    int units; double amount;
+    Electricity(int u) { units = u; }
+    double Bill() {
+        if(units<=100)       amount = units * 0.50;
+        else if(units<=300)  amount = 50 + (units-100)*0.75;
+        else                 amount = 50 + 150 + (units-300)*0.60;
+        return amount;
+    }
+}
+class More_Electricity extends Electricity {
+    More_Electricity(int u) { super(u); }
+    @Override
+    double Bill() {
+        double base = super.Bill();
+        System.out.println("Units: "+units+", Base Bill: Rs."+base);
+        if(base > 250) {
+            double sc = (base-250)*0.15;
+            System.out.println("Surcharge: Rs."+sc);
+            System.out.println("Total: Rs."+(base+sc));
+            return base+sc;
+        }
+        System.out.println("Total: Rs."+base); return base;
+    }
+}
+public class ElectricityDemo {
+    public static void main(String[] args) {
+        new More_Electricity(80).Bill();
+        System.out.println();
+        new More_Electricity(250).Bill();
+    }
+}
+
+
+//Q2(b)  EXTRA PRACTICE  [5 marks]  Menu-driven program: Factorial, Palindrome, ASCII
+Unit II	Control Statements
+
+Write a menu-driven program using do-while + switch. Menu options: 1.Factorial  2.Palindrome  3.ASCII of character  4.Exit. Keep running until user selects Exit.
+
+import java.util.Scanner;
+public class MenuDriven {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        int ch;
+        do {
+            System.out.println("\n1.Factorial 2.Palindrome 3.ASCII 4.Exit");
+            System.out.print("Choice: "); ch = sc.nextInt();
+            switch(ch) {
+                case 1: System.out.print("n: "); int n=sc.nextInt();
+                        long f=1; for(int i=1;i<=n;i++) f*=i;
+                        System.out.println(n+"! = "+f); break;
+                case 2: System.out.print("Number: "); int num=sc.nextInt();
+                        int orig=num,rev=0;
+                        while(num>0){rev=rev*10+num%10;num/=10;}
+                        System.out.println(orig+(orig==rev?" is":" is NOT")+" palindrome"); break;
+                case 3: System.out.print("Char: "); char c=sc.next().charAt(0);
+                        System.out.println("ASCII of '"+c+"' = "+(int)c); break;
+                case 4: System.out.println("Exiting."); break;
+                default: System.out.println("Invalid!");
+            }
+        } while(ch!=4);
+        sc.close();
+    }
+}
+
+
+//Q3(a)  FROM PAPER 2  [5 marks]  Hybrid Inheritance – Animal / LandMammal / HybridMammal
+Unit III	Run-time Polymorphism
+
+Create interfaces LandAnimal (move()) and AquaticAnimal (swim()). Base class Animal has makeSound(). LandMammal extends Animal & implements LandAnimal. AquaticMammal extends Animal & implements AquaticAnimal. HybridMammal extends Animal & implements both. Demonstrate runtime polymorphism.
+
+
+interface LandAnimal   { void move(); }
+interface AquaticAnimal { void swim(); }
+class Animal { void makeSound() { System.out.println("Animal making sound"); } }
+class LandMammal extends Animal implements LandAnimal {
+    public void move() { System.out.println("LandMammal moves on land"); }
+}
+class AquaticMammal extends Animal implements AquaticAnimal {
+    public void swim() { System.out.println("AquaticMammal swims"); }
+}
+class HybridMammal extends Animal implements LandAnimal, AquaticAnimal {
+    public void move() { System.out.println("HybridMammal moves on land"); }
+    public void swim() { System.out.println("HybridMammal swims in water"); }
+}
+public class AnimalDemo {
+    public static void main(String[] args) {
+        Animal a;
+        a = new LandMammal(); a.makeSound(); ((LandMammal)a).move();
+        a = new AquaticMammal(); a.makeSound(); ((AquaticMammal)a).swim();
+        a = new HybridMammal(); a.makeSound();
+        ((HybridMammal)a).move(); ((HybridMammal)a).swim();
+    }
+}
+
+
+//Q3(a)  EXTRA PRACTICE  [5 marks]  Shape → Circle, Rectangle, Triangle (Runtime Polymorphism)
+Unit III	Run-time Polymorphism
+
+Create abstract class Shape with abstract method area(). Subclasses Circle, Rectangle, Triangle override area(). Demonstrate runtime polymorphism using a Shape reference array.
+
+
+abstract class Shape { abstract double area(); }
+class Circle extends Shape {
+    double r; Circle(double r){this.r=r;}
+    double area(){ return Math.PI*r*r; }
+}
+class Rectangle extends Shape {
+    double l,w; Rectangle(double l,double w){this.l=l;this.w=w;}
+    double area(){ return l*w; }
+}
+class Triangle extends Shape {
+    double b,h; Triangle(double b,double h){this.b=b;this.h=h;}
+    double area(){ return 0.5*b*h; }
+}
+public class PolymorphismDemo {
+    public static void main(String[] args) {
+        Shape[] shapes = { new Circle(7), new Rectangle(5,3), new Triangle(6,4) };
+        String[] names = { "Circle", "Rectangle", "Triangle" };
+        for(int i=0;i<shapes.length;i++)
+            System.out.printf("%s area = %.2f%n", names[i], shapes[i].area());
+    }
+}
+
+
+//Q3(b)  EXTRA PRACTICE 1  [5 marks]  String Methods – reverse, palindrome, count vowels
+Unit III	String, StringBuffer
+
+Write a Java program to: (i) reverse a string using StringBuffer, (ii) check if it is a palindrome, (iii) count vowels in the string.
+
+
+public class StringOps {
+    public static void main(String[] args) {
+        String str = "racecar";
+        // Reverse using StringBuffer
+        String rev = new StringBuffer(str).reverse().toString();
+        System.out.println("Original : " + str);
+        System.out.println("Reversed : " + rev);
+        // Palindrome check
+        System.out.println("Palindrome? " + str.equals(rev));
+        // Count vowels
+        int count = 0;
+        for(char c : str.toCharArray())
+            if("aeiouAEIOU".indexOf(c) != -1) count++;
+        System.out.println("Vowel count: " + count);
+        // StringBuffer operations
+        StringBuffer sb = new StringBuffer("Hello");
+        sb.append(" World"); System.out.println("Append: " + sb);
+        sb.insert(5, ",");    System.out.println("Insert: " + sb);
+        sb.replace(7,12,"Java"); System.out.println("Replace: " + sb);
+        sb.delete(5,5);        System.out.println("Delete: " + sb);
+    }
+}
+
+
+//Q3(b)  EXTRA PRACTICE 2  [5 marks]  String – split, concat, compare, toUpperCase
+Unit III	String, StringBuffer
+
+Demonstrate key String class methods: length(), charAt(), substring(), toUpperCase(), toLowerCase(), compareTo(), concat(), split().
+
+
+public class StringMethods {
+    public static void main(String[] args) {
+        String s1 = "Hello World";
+        System.out.println("Length    : " + s1.length());
+        System.out.println("charAt(4) : " + s1.charAt(4));
+        System.out.println("Substring : " + s1.substring(6));
+        System.out.println("Upper     : " + s1.toUpperCase());
+        System.out.println("Lower     : " + s1.toLowerCase());
+        String s2 = "Java"; String s3 = "Java";
+        System.out.println("Equals    : " + s2.equals(s3));
+        System.out.println("Concat    : " + s2.concat(" Programming"));
+        String csv = "a,b,c,d";
+        String[] parts = csv.split(",");
+        System.out.print("Split     : ");
+        for(String p : parts) System.out.print(p+" ");
+    }
+}
+
+
+//Q4(a)  FROM PAPER 1  [5 marks]  Interface Shape with static methods + Rectangle
+Unit IV	Abstract classes and methods
+
+Design an interface Shape with two static methods: calculateArea(d1,d2) and calculatePerimeter(d1,d2) for a rectangle. Implement a Rectangle class that uses these static methods.
+
+
+interface Shape {
+    static double calculateArea(double d1, double d2)      { return d1 * d2; }
+    static double calculatePerimeter(double d1, double d2) { return 2*(d1+d2); }
+}
+class Rectangle implements Shape {
+    private double length, width;
+    Rectangle(double l, double w) { length=l; width=w; }
+    void display() {
+        System.out.println("Rectangle: L=" + length + ", W=" + width);
+        System.out.println("Area      : " + Shape.calculateArea(length,width));
+        System.out.println("Perimeter : " + Shape.calculatePerimeter(length,width));
+    }
+}
+public class ShapeDemo {
+    public static void main(String[] args) { new Rectangle(8,5).display(); }
+}
+
+
+
+//Q4(a)  EXTRA PRACTICE  [5 marks]  Abstract class Shape3D → Sphere & Cube
+Unit IV	Abstract classes and methods
+
+Create abstract class Shape3D with abstract methods calculateVolume() and calculateSurfaceArea(). Subclasses Sphere and Cube implement these. Demonstrate with objects.
+
+abstract class Shape3D {
+    abstract double calculateVolume();
+    abstract double calculateSurfaceArea();
+    void display(String name) {
+        System.out.printf("%s Volume=%.2f, Surface=%.2f%n",
+            name, calculateVolume(), calculateSurfaceArea());
+    }
+}
+class Sphere extends Shape3D {
+    double r; Sphere(double r){this.r=r;}
+    double calculateVolume()      { return (4.0/3)*Math.PI*r*r*r; }
+    double calculateSurfaceArea() { return 4*Math.PI*r*r; }
+}
+class Cube extends Shape3D {
+    double s; Cube(double s){this.s=s;}
+    double calculateVolume()      { return s*s*s; }
+    double calculateSurfaceArea() { return 6*s*s; }
+}
+public class TestShape3D {
+    public static void main(String[] args) {
+        new Sphere(5).display("Sphere(r=5)");
+        new Cube(4).display("Cube(s=4)");
+    }
+}
+
+
+//Q4(b)  FROM PAPER 1  [5 marks]  BankingSystem → LoanManagement (super + inheritance)
+Unit IV	Overriding / super / final
+
+Create class BankingSystem with data member balance. Derive LoanManagement from BankingSystem. Method applyForLoan() checks if loan < 5x balance → APPROVED else DENIED.
+
+
+class BankingSystem {
+    double balance;
+    BankingSystem(double b) { balance = b; }
+}
+class LoanManagement extends BankingSystem {
+    LoanManagement(double b) { super(b); }
+    void applyForLoan(double loan) {
+        System.out.println("Balance: Rs."+balance+", Loan: Rs."+loan);
+        System.out.println(loan < 5*balance ? "APPROVED" : "DENIED (exceeds 5x balance)");
+    }
+    public static void main(String[] args) {
+        LoanManagement lm = new LoanManagement(50000);
+        lm.applyForLoan(200000);
+        lm.applyForLoan(300000);
+    }
+}
+
+
+//Q4(b)  EXTRA PRACTICE  [5 marks]  final keyword + super keyword demo
+Unit IV	Overriding / super / final
+
+Demonstrate: (i) super to call parent constructor and parent method, (ii) final method that cannot be overridden, (iii) final variable as constant.
+
+
+class Animal {
+    String name;
+    Animal(String n) { name=n; }
+    void speak() { System.out.println(name + " makes a sound"); }
+    final void breathe() { System.out.println(name + " breathes oxygen"); }
+}
+class Dog extends Animal {
+    String breed;
+    Dog(String n, String b) { super(n); breed=b; } // super() constructor
+    @Override
+    void speak() {
+        super.speak();  // super method call
+        System.out.println(name + " also barks! Breed: " + breed);
+    }
+    // void breathe(){} // ERROR – cannot override final method
+}
+public class FinalSuperDemo {
+    static final double PI = 3.14159;  // final variable = constant
+    public static void main(String[] args) {
+        Dog d = new Dog("Bruno", "Labrador");
+        d.speak();
+        d.breathe();
+        System.out.println("PI = " + PI);
+        // PI = 3; // ERROR – cannot reassign final variable
+    }
+}
+
+
+//Q5(a)  FROM PAPER 2  [5 marks]  GUI Rectangle Calculator – JFrame with JTextField
+Unit VI	JFrames, JApplets
+
+Demonstrate a Java event-driven GUI application to calculate area and perimeter of a rectangle. Use JTextField for length and width input. On clicking Calculate, display computed area and perimeter.
+
+import javax.swing.*; import java.awt.*; import java.awt.event.*;
+public class RectangleCalculator extends JFrame implements ActionListener {
+    JTextField lenF,widF,areaF,periF; JButton calcBtn;
+    RectangleCalculator() {
+        setTitle("Area_Perimeter_Test"); setLayout(new GridLayout(5,2,8,6));
+        add(new JLabel("Area and Perimeter of Rectangle",JLabel.CENTER));add(new JLabel(""));
+        add(new JLabel("Enter Length :")); lenF=new JTextField(); add(lenF);
+        add(new JLabel("Enter Width  :")); widF=new JTextField(); add(widF);
+        calcBtn=new JButton("Calculate"); calcBtn.addActionListener(this);
+        add(calcBtn); add(new JLabel(""));
+        add(new JLabel("Area is      :")); areaF=new JTextField(); areaF.setEditable(false); add(areaF);
+        add(new JLabel("Perimeter is :")); periF=new JTextField(); periF.setEditable(false); add(periF);
+        setSize(380,220); setDefaultCloseOperation(EXIT_ON_CLOSE); setVisible(true);
+    }
+    public void actionPerformed(ActionEvent e) {
+        try {
+            double l=Double.parseDouble(lenF.getText());
+            double w=Double.parseDouble(widF.getText());
+            areaF.setText(String.valueOf(l*w));
+            periF.setText(String.valueOf(2*(l+w)));
+        } catch(NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this,"Enter valid numbers!");
+        }
+    }
+    public static void main(String[] args) { new RectangleCalculator(); }
+}
+
+//Q5(a)  EXTRA PRACTICE  [5 marks]  JFrame with JMenu, JMenuBar, JMenuItem
+Unit VI	JFrames, JApplets
+
+Create a JFrame with a menu bar containing a 'File' menu with items: New, Open, Save, and Exit. When any item is clicked, show a message in a JLabel.
+
+
+import javax.swing.*; import java.awt.event.*;
+public class MenuBarDemo extends JFrame implements ActionListener {
+    JLabel statusLabel;
+    MenuBarDemo() {
+        setTitle("Menu Demo"); setSize(400, 250);
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        JMenuBar menuBar = new JMenuBar();
+        JMenu fileMenu = new JMenu("File");
+        String[] items = {"New","Open","Save","Exit"};
+        for(String item : items) {
+            JMenuItem mi = new JMenuItem(item);
+            mi.addActionListener(this);
+            fileMenu.add(mi);
+        }
+        menuBar.add(fileMenu); setJMenuBar(menuBar);
+        statusLabel = new JLabel("Select a menu item", JLabel.CENTER);
+        add(statusLabel); setVisible(true);
+    }
+    public void actionPerformed(ActionEvent e) {
+        String cmd = e.getActionCommand();
+        if(cmd.equals("Exit")) System.exit(0);
+        statusLabel.setText(cmd + " selected");
+    }
+    public static void main(String[] args) { new MenuBarDemo(); }
+}
+
+
+//Q5(b)  FROM PAPER 1  [5 marks]  GUI Feedback Form – ActionListener event handling
+Unit VI	Event Handling
+
+Create a Java GUI Feedback Form using Swing with a JTextArea and two buttons: Submit and Reset. Submit displays 'Successfully submitted'; Reset clears the text area.
+
+
+import javax.swing.*; import java.awt.*; import java.awt.event.*;
+public class FeedbackForm extends JFrame implements ActionListener {
+    JTextArea ta; JButton sub,res; JLabel lbl;
+    FeedbackForm() {
+        setTitle("Feedback Form"); setLayout(new BorderLayout(8,8));
+        add(new JLabel("Feedback:",JLabel.CENTER),BorderLayout.NORTH);
+        ta=new JTextArea(7,30); add(new JScrollPane(ta),BorderLayout.CENTER);
+        JPanel p=new JPanel(); sub=new JButton("Submit"); res=new JButton("Reset");
+        sub.addActionListener(this); res.addActionListener(this);
+        p.add(sub); p.add(res); lbl=new JLabel("",JLabel.CENTER);
+        JPanel s=new JPanel(new BorderLayout()); s.add(p,BorderLayout.NORTH); s.add(lbl,BorderLayout.SOUTH);
+        add(s,BorderLayout.SOUTH);
+        setSize(400,300); setDefaultCloseOperation(EXIT_ON_CLOSE); setVisible(true);
+    }
+    public void actionPerformed(ActionEvent e) {
+        if(e.getSource()==sub) { lbl.setText("Successfully submitted"); lbl.setForeground(Color.BLUE); }
+        else { ta.setText(""); lbl.setText(""); }
+    }
+    public static void main(String[] args) { new FeedbackForm(); }
+}
+
+
+//Q5(b)  EXTRA PRACTICE  [5 marks]  MouseListener + KeyListener event handling
+Unit VI	Event Handling
+
+Create a JFrame that demonstrates MouseListener (show click coordinates in a JLabel) and KeyListener (show key pressed in another JLabel).
+
+
+import javax.swing.*; import java.awt.*; import java.awt.event.*;
+public class EventDemo extends JFrame implements MouseListener, KeyListener {
+    JLabel mouseLabel, keyLabel; JTextField keyField;
+    EventDemo() {
+        setTitle("Event Demo"); setLayout(new FlowLayout(FlowLayout.CENTER,10,20));
+        mouseLabel = new JLabel("Click anywhere"); add(mouseLabel);
+        keyField   = new JTextField(15); add(keyField);
+        keyLabel   = new JLabel("Press any key"); add(keyLabel);
+        addMouseListener(this); keyField.addKeyListener(this);
+        setSize(400,200); setDefaultCloseOperation(EXIT_ON_CLOSE); setVisible(true);
+    }
+    public void mouseClicked(MouseEvent e) {
+        mouseLabel.setText("Clicked at (" + e.getX() + "," + e.getY() + ")");
+    }
+    public void keyPressed(KeyEvent e) {
+        keyLabel.setText("Key: " + KeyEvent.getKeyText(e.getKeyCode()));
+    }
+    public void mousePressed(MouseEvent e){} public void mouseReleased(MouseEvent e){}
+    public void mouseEntered(MouseEvent e){} public void mouseExited(MouseEvent e){}
+    public void keyReleased(KeyEvent e){} public void keyTyped(KeyEvent e){}
+    public static void main(String[] args) { new EventDemo(); }
+}
+
+
+//Q6(a)  FROM PAPER 1  [5 marks]  InputMismatchException + try-catch-finally
+Unit V	Exception Handling
+
+Handle InputMismatchException: user enters a String instead of an integer. Use try-catch-finally. Display appropriate error message.
+
+
+import java.util.*; 
+public class InputHandler {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        try {
+            System.out.print("Enter an integer: ");
+            int num = sc.nextInt();
+            System.out.println("You entered: " + num);
+        } catch(InputMismatchException e) {
+            System.out.println("Error: Expected integer, got a string/other type.");
+            System.out.println("Exception: " + e.getClass().getSimpleName());
+        } finally {
+            System.out.println("finally – program complete.");
+            sc.close();
+        }
+    }
+}
+
+
+
+//Q6(a)  EXTRA PRACTICE  [5 marks]  User-defined Exception + multiple catch blocks
+Unit V	Exception Handling
+
+Create user-defined exception InsufficientFundsException. In a BankAccount class, throw it when withdrawal exceeds balance. Also handle ArithmeticException and NullPointerException in a separate demo.
+
+ 
+// User-defined exception
+class InsufficientFundsException extends Exception {
+    InsufficientFundsException(String msg) { super(msg); }
+}
+class BankAccount {
+    double balance;
+    BankAccount(double b) { balance=b; }
+    void withdraw(double amt) throws InsufficientFundsException {
+        if(amt > balance)
+            throw new InsufficientFundsException(
+                "Cannot withdraw Rs."+amt+". Balance is Rs."+balance);
+        balance -= amt;
+        System.out.println("Withdrawn Rs."+amt+". New balance: Rs."+balance);
+    }
+}
+public class ExceptionDemo {
+    public static void main(String[] args) {
+        BankAccount acc = new BankAccount(5000);
+        try {
+            acc.withdraw(2000);  // OK
+            acc.withdraw(8000);  // throws exception
+        } catch(InsufficientFundsException e) {
+            System.out.println("Custom Exception: " + e.getMessage());
+        }
+        // Multiple catch
+        try {
+            int[] a = new int[3];
+            a[10] = 5;
+        } catch(ArrayIndexOutOfBoundsException e) {
+            System.out.println("Array Error: " + e.getMessage());
+        } catch(Exception e) {
+            System.out.println("General: " + e.getMessage());
+        } finally {
+            System.out.println("finally executed");
+        }
+    }
+}
+
+  
+//Q6(b)  FROM PAPER 2  [5 marks]  ArrayList Sum – sumOfList() method with Iterator
+Unit VII	LinkedList Collections
+
+Develop Java program that takes ArrayList of integers and returns sum of all elements. Traverse using Iterator.
+
+
+import java.util.*;
+public class ArrayListSum {
+    static int sumOfList(ArrayList<Integer> list) {
+        int sum=0; for(int n:list) sum+=n; return sum;
+    }
+    public static void main(String[] args) {
+        ArrayList<Integer> nums = new ArrayList<>(Arrays.asList(10,20,35,45,50));
+        System.out.println("List : " + nums);
+        System.out.println("Sum  : " + sumOfList(nums));
+        System.out.print("Iterator: ");
+        Iterator<Integer> it = nums.iterator();
+        while(it.hasNext()) System.out.print(it.next()+" ");
+    }
+}
+
+ 
+//Q6(b)  EXTRA PRACTICE  [5 marks]  LinkedList – add, remove, traverse, addFirst/addLast
+Unit VII	LinkedList Collections
+
+Demonstrate LinkedList: add elements, addFirst(), addLast(), removeFirst(), peekFirst(), traverse with Iterator and for-each loop.
+
+ 
+import java.util.*;
+public class LinkedListDemo {
+    public static void main(String[] args) {
+        LinkedList<String> ll = new LinkedList<>();
+        ll.add("Banana"); ll.add("Cherry"); ll.add("Date");
+        ll.addFirst("Apple");   // add at beginning
+        ll.addLast("Elderberry"); // add at end
+        System.out.println("LinkedList    : " + ll);
+        System.out.println("First element : " + ll.getFirst());
+        System.out.println("Last element  : " + ll.getLast());
+        System.out.println("Size          : " + ll.size());
+        // Iterator traversal
+        System.out.print("Iterator: ");
+        Iterator<String> it = ll.iterator();
+        while(it.hasNext()) System.out.print(it.next()+" ");
+        System.out.println();
+        // Remove first
+        ll.removeFirst();
+        System.out.println("After removeFirst: " + ll);
+        // For-each
+        System.out.print("For-each: ");
+        for(String s : ll) System.out.print(s+" ");
+    }
+}
+
+ 
